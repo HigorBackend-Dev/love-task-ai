@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
-import { supabase } from '@/lib/supabase';
+import { supabase } from '@/integrations/supabase/client';
 import { Task } from '@/types/task';
 import { useToast } from '@/hooks/use-toast';
 
@@ -16,7 +16,7 @@ export function useTasks() {
         .order('created_at', { ascending: false });
 
       if (error) throw error;
-      setTasks(data || []);
+      setTasks((data || []) as Task[]);
     } catch (error) {
       console.error('Error fetching tasks:', error);
       toast({
@@ -46,12 +46,13 @@ export function useTasks() {
 
       if (error) throw error;
 
-      setTasks(prev => [data, ...prev]);
+      const taskData = data as Task;
+      setTasks(prev => [taskData, ...prev]);
       
       // Trigger enhancement
-      enhanceTask(data.id, title);
+      enhanceTask(taskData.id, title);
       
-      return data;
+      return taskData;
     } catch (error) {
       console.error('Error creating task:', error);
       toast({
