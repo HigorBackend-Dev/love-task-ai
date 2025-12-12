@@ -12,9 +12,11 @@ serve(async (req) => {
   }
 
   try {
-    const { message } = await req.json();
+    const { message, selectedTask, sessionId } = await req.json();
     
     console.log(`[chatbot] Processing message: "${message}"`);
+    console.log(`[chatbot] Selected task:`, selectedTask);
+    console.log(`[chatbot] Session ID:`, sessionId);
 
     // Get N8N chatbot webhook URL from environment
     const n8nChatbotUrl = Deno.env.get('N8N_CHATBOT_WEBHOOK_URL');
@@ -24,17 +26,29 @@ serve(async (req) => {
       throw new Error('N8N chatbot webhook URL not configured');
     }
 
+    // Build context for N8N
+    const context = {
+      message,
+      action: 'chat',
+      sessionId,
+      selectedTask: selectedTask ? {
+        id: selectedTask.id,
+        title: selectedTask.title,
+        enhanced_title: selectedTask.enhanced_title,
+        is_completed: selectedTask.is_completed,
+        status: selectedTask.status,
+        created_at: selectedTask.created_at,
+      } : null,
+    };
+
     // Call N8N webhook
-    console.log(`[chatbot] Calling N8N chatbot webhook...`);
+    console.log(`[chatbot] Calling N8N chatbot webhook with context...`);
     const n8nResponse = await fetch(n8nChatbotUrl, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
       },
-      body: JSON.stringify({
-        message,
-        action: 'chat',
-      }),
+      body: JSON.stringify(context),
     });
 
     if (!n8nResponse.ok) {
@@ -46,12 +60,22 @@ serve(async (req) => {
     const n8nData = await n8nResponse.json();
     console.log(`[chatbot] N8N response:`, n8nData);
 
+    // Parse N8N response for actions
+    // N8N can return:
+    // - response: text response to show user
+    // - action: 'update_task' | 'complete_task' | null
+    // - updates: { title?: string, is_completed?: boolean } (for update_task action)
+    
     const response = n8nData.response || n8nData.message || 'Sem resposta do assistente.';
+    const action = n8nData.action || null;
+    const updates = n8nData.updates || null;
 
     return new Response(
       JSON.stringify({ 
         success: true, 
-        response 
+        response,
+        action,
+        updates,
       }),
       { 
         headers: { ...corsHeaders, 'Content-Type': 'application/json' } 
