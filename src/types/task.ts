@@ -21,9 +21,15 @@ export interface ChatMessage {
   role: 'user' | 'assistant' | 'system';
   content: string;
   metadata?: {
-    type?: 'task_list' | 'task_selected' | 'task_updated';
+    type?: 'task_list' | 'task_selected' | 'task_updated' | 'pending_confirmation';
     tasks?: Task[];
     selected_task?: Task;
+    pending_update?: {
+      task_id: string;
+      field: string;
+      new_value: string;
+      old_value: string;
+    };
   };
   created_at: string;
 }

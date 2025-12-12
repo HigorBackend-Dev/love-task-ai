@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect } from 'react';
-import { Send, Bot, User, Trash2, Loader2, MessageSquare, Plus, History, X, CheckCircle2 } from 'lucide-react';
+import { Send, Bot, User, Trash2, Loader2, MessageSquare, Plus, History, X, CheckCircle2, Pencil, HelpCircle } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { ScrollArea } from '@/components/ui/scroll-area';
@@ -7,6 +7,11 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { ChatMessage, ChatSession, Task } from '@/types/task';
 import { cn } from '@/lib/utils';
 import { Badge } from '@/components/ui/badge';
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from '@/components/ui/popover';
 
 interface ChatPanelProps {
   sessions: ChatSession[];
@@ -21,6 +26,13 @@ interface ChatPanelProps {
   onDeleteSession: (sessionId: string) => void;
   onSelectTask: (task: Task) => void;
   onClearTaskSelection: () => void;
+  onConfirmUpdate: (messageId: string, pendingUpdate: {
+    task_id: string;
+    field: string;
+    new_value: string;
+    old_value: string;
+  }) => void;
+  onRejectUpdate: () => void;
 }
 
 export function ChatPanel({
@@ -36,10 +48,15 @@ export function ChatPanel({
   onDeleteSession,
   onSelectTask,
   onClearTaskSelection,
+  onConfirmUpdate,
+  onRejectUpdate,
 }: ChatPanelProps) {
   const [input, setInput] = useState('');
   const [activeTab, setActiveTab] = useState<'chat' | 'history'>('chat');
+  const [showTaskDropdown, setShowTaskDropdown] = useState(false);
+  const [filteredTasks, setFilteredTasks] = useState<Task[]>([]);
   const scrollRef = useRef<HTMLDivElement>(null);
+  const inputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     if (scrollRef.current) {
@@ -47,9 +64,49 @@ export function ChatPanel({
     }
   }, [messages]);
 
+  const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const value = e.target.value;
+    setInput(value);
+
+    // Detectar # no final do texto
+    if (value.endsWith('#')) {
+      setFilteredTasks(tasks);
+      setShowTaskDropdown(true);
+    } else if (value.includes('#')) {
+      // Filtrar tasks baseado no texto após #
+      const lastHashIndex = value.lastIndexOf('#');
+      const searchTerm = value.slice(lastHashIndex + 1).toLowerCase();
+      
+      if (searchTerm === '') {
+        setFilteredTasks(tasks);
+        setShowTaskDropdown(true);
+      } else {
+        const filtered = tasks.filter(task => 
+          task.title.toLowerCase().includes(searchTerm)
+        );
+        setFilteredTasks(filtered);
+        setShowTaskDropdown(filtered.length > 0);
+      }
+    } else {
+      setShowTaskDropdown(false);
+    }
+  };
+
+  const handleTaskSelect = (task: Task) => {
+    // Remove o # e qualquer texto após ele
+    const lastHashIndex = input.lastIndexOf('#');
+    const newInput = input.slice(0, lastHashIndex);
+    
+    onSelectTask(task);
+    setInput(newInput.trim());
+    setShowTaskDropdown(false);
+    inputRef.current?.focus();
+  };
+
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (!input.trim() || isLoading) return;
+    setShowTaskDropdown(false);
     onSendMessage(input.trim(), tasks);
     setInput('');
   };
@@ -83,14 +140,58 @@ export function ChatPanel({
                 Histórico
               </TabsTrigger>
             </TabsList>
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={onCreateSession}
-              className="text-primary hover:text-primary/80"
-            >
-              <Plus className="h-4 w-4" />
-            </Button>
+            <div className="flex gap-1">
+              <Popover>
+                <PopoverTrigger asChild>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="text-muted-foreground hover:text-foreground"
+                  >
+                    <HelpCircle className="h-4 w-4" />
+                  </Button>
+                </PopoverTrigger>
+                <PopoverContent className="w-80" align="end">
+                  <div className="space-y-3">
+                    <h4 className="font-semibold text-sm">Como usar o chat</h4>
+                    
+                    <div className="space-y-2 text-xs">
+                      <div>
+                        <p className="font-medium text-muted-foreground mb-1">1. Selecionar uma tarefa:</p>
+                        <p className="text-muted-foreground">Digite <code className="bg-muted px-1 rounded">#</code> e escolha uma tarefa</p>
+                      </div>
+                      
+                      <div>
+                        <p className="font-medium text-muted-foreground mb-1">2. Comandos rápidos:</p>
+                        <ul className="text-muted-foreground space-y-0.5 ml-2">
+                          <li>• <code className="bg-muted px-1 rounded">finalizar</code> - Marca como concluída</li>
+                          <li>• <code className="bg-muted px-1 rounded">reabrir</code> - Volta para pendente</li>
+                          <li>• <code className="bg-muted px-1 rounded">deletar essa task</code> - Remove</li>
+                          <li>• <code className="bg-muted px-1 rounded">mudar o título para: [novo]</code> - Atualiza</li>
+                        </ul>
+                      </div>
+                      
+                      <div>
+                        <p className="font-medium text-muted-foreground mb-1">3. Com IA:</p>
+                        <ul className="text-muted-foreground space-y-0.5 ml-2">
+                          <li>• <code className="bg-muted px-1 rounded">melhore essa task</code></li>
+                          <li>• <code className="bg-muted px-1 rounded">me ajude com isso</code></li>
+                          <li>• Ou converse naturalmente!</li>
+                        </ul>
+                      </div>
+                    </div>
+                  </div>
+                </PopoverContent>
+              </Popover>
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={onCreateSession}
+                className="text-primary hover:text-primary/80"
+              >
+                <Plus className="h-4 w-4" />
+              </Button>
+            </div>
           </div>
 
           {/* Selected Task Badge */}
@@ -130,9 +231,56 @@ export function ChatPanel({
               ) : messages.length === 0 ? (
                 <div className="flex flex-col items-center justify-center h-full text-center py-8">
                   <Bot className="h-12 w-12 text-muted-foreground/40 mb-3" />
-                  <p className="text-muted-foreground text-sm">
-                    Digite <span className="font-mono bg-muted px-1 rounded">#</span> para listar suas tarefas.
+                  <p className="text-muted-foreground text-sm mb-4">
+                    Como posso ajudar você hoje?
                   </p>
+                  
+                  {/* Quick Actions */}
+                  <div className="space-y-3 w-full max-w-xs">
+                    <p className="text-xs text-muted-foreground font-medium mb-2">Ações Rápidas:</p>
+                    
+                    {!selectedTask ? (
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => setInput('#')}
+                        className="w-full justify-start gap-2"
+                      >
+                        <span className="font-mono">#</span>
+                        Selecionar uma tarefa
+                      </Button>
+                    ) : (
+                      <div className="space-y-2">
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => setInput('finalizar')}
+                          className="w-full justify-start gap-2 text-green-600 hover:text-green-700"
+                        >
+                          <CheckCircle2 className="h-4 w-4" />
+                          Finalizar tarefa
+                        </Button>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => setInput('melhore essa task')}
+                          className="w-full justify-start gap-2 text-blue-600 hover:text-blue-700"
+                        >
+                          <Bot className="h-4 w-4" />
+                          Melhorar com IA
+                        </Button>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => setInput('mudar o título para: ')}
+                          className="w-full justify-start gap-2"
+                        >
+                          <Pencil className="h-4 w-4" />
+                          Mudar título
+                        </Button>
+                      </div>
+                    )}
+                  </div>
                 </div>
               ) : (
                 <div className="space-y-4">
@@ -187,6 +335,39 @@ export function ChatPanel({
                                 ))}
                               </div>
                             )}
+
+                            {/* Confirmation Buttons */}
+                            {message.metadata?.type === 'pending_confirmation' && message.metadata.pending_update && (
+                              <div className="mt-3 space-y-2 p-3 bg-primary/5 rounded-md border border-primary/20">
+                                <div className="text-xs text-muted-foreground space-y-1">
+                                  <p><strong>Tarefa:</strong> {message.metadata.pending_update.old_value}</p>
+                                  <p><strong>Nova descrição:</strong> {message.metadata.pending_update.new_value}</p>
+                                </div>
+                                <div className="flex gap-2 mt-2">
+                                  <Button
+                                    size="sm"
+                                    onClick={() => {
+                                      if (message.metadata?.pending_update) {
+                                        onConfirmUpdate(message.id, message.metadata.pending_update);
+                                      }
+                                    }}
+                                    className="flex-1 bg-green-600 hover:bg-green-700"
+                                  >
+                                    <CheckCircle2 className="h-4 w-4 mr-1" />
+                                    Sim, confirmar
+                                  </Button>
+                                  <Button
+                                    size="sm"
+                                    variant="outline"
+                                    onClick={onRejectUpdate}
+                                    className="flex-1"
+                                  >
+                                    <X className="h-4 w-4 mr-1" />
+                                    Não
+                                  </Button>
+                                </div>
+                              </div>
+                            )}
                           </div>
                           {message.role === 'user' && (
                             <div className="flex-shrink-0 h-8 w-8 rounded-full bg-secondary flex items-center justify-center">
@@ -213,12 +394,80 @@ export function ChatPanel({
 
             {/* Input */}
             {currentSession && (
-              <form onSubmit={handleSubmit} className="p-4 border-t">
+              <form onSubmit={handleSubmit} className="p-4 border-t relative">
+                {/* Task Dropdown */}
+                {showTaskDropdown && filteredTasks.length > 0 && (
+                  <div className="absolute bottom-full left-4 right-4 mb-2 bg-popover border rounded-lg shadow-lg max-h-[200px] overflow-y-auto z-50">
+                    <div className="p-2 space-y-1">
+                      {filteredTasks.map((task) => (
+                        <button
+                          key={task.id}
+                          type="button"
+                          onClick={() => handleTaskSelect(task)}
+                          className="w-full text-left px-3 py-2 rounded hover:bg-accent transition-colors flex items-center gap-2"
+                        >
+                          {task.is_completed && (
+                            <CheckCircle2 className="h-4 w-4 text-green-500 flex-shrink-0" />
+                          )}
+                          <span className="text-sm truncate">{task.title}</span>
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {/* Command Suggestions */}
+                {selectedTask && !input && messages.length > 0 && (
+                  <div className="mb-3 flex flex-wrap gap-2">
+                    <Button
+                      type="button"
+                      variant="secondary"
+                      size="sm"
+                      onClick={() => setInput('finalizar')}
+                      className="h-7 text-xs gap-1"
+                    >
+                      <CheckCircle2 className="h-3 w-3" />
+                      Finalizar
+                    </Button>
+                    <Button
+                      type="button"
+                      variant="secondary"
+                      size="sm"
+                      onClick={() => setInput('melhore essa task')}
+                      className="h-7 text-xs gap-1"
+                    >
+                      <Bot className="h-3 w-3" />
+                      Melhorar
+                    </Button>
+                    <Button
+                      type="button"
+                      variant="secondary"
+                      size="sm"
+                      onClick={() => setInput('mudar o título para: ')}
+                      className="h-7 text-xs gap-1"
+                    >
+                      <Pencil className="h-3 w-3" />
+                      Mudar título
+                    </Button>
+                    <Button
+                      type="button"
+                      variant="secondary"
+                      size="sm"
+                      onClick={() => setInput('deletar essa task')}
+                      className="h-7 text-xs gap-1 text-destructive"
+                    >
+                      <Trash2 className="h-3 w-3" />
+                      Deletar
+                    </Button>
+                  </div>
+                )}
+
                 <div className="flex gap-2">
                   <Input
+                    ref={inputRef}
                     value={input}
-                    onChange={(e) => setInput(e.target.value)}
-                    placeholder="Digite # para ver tarefas..."
+                    onChange={handleInputChange}
+                    placeholder={selectedTask ? "Digite um comando ou mensagem..." : "Digite # para selecionar uma tarefa..."}
                     disabled={isLoading}
                     className="flex-1"
                   />

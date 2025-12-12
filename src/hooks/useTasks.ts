@@ -261,13 +261,24 @@ export function useTasks() {
           console.log('Task updated via realtime:', payload);
           const updatedTask = payload.new as Task;
           
-          setTasks(prev =>
-            prev.map(t =>
+          setTasks(prev => {
+            const updated = prev.map(t =>
               t.id === updatedTask.id
                 ? updatedTask
                 : t
-            )
-          );
+            );
+            console.log('Tasks after realtime update:', updated);
+            return updated;
+          });
+          
+          // Show notification if title was updated from chat
+          const oldTask = payload.old as Task;
+          if (oldTask && updatedTask.title !== oldTask.title) {
+            toast({
+              title: 'Tarefa atualizada!',
+              description: `Título alterado para: ${updatedTask.title}`,
+            });
+          }
           
           // Show notification if enhanced_title was updated
           if (updatedTask.enhanced_title && updatedTask.status === 'enhanced') {

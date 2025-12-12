@@ -4,6 +4,13 @@ import { ChatSession, ChatMessage, Task } from '@/types/task';
 import { useToast } from '@/hooks/use-toast';
 import { Json } from '@/integrations/supabase/types';
 
+interface PendingUpdate {
+  task_id: string;
+  field: string;
+  new_value: string;
+  old_value: string;
+}
+
 export function useChatSessions() {
   const [sessions, setSessions] = useState<ChatSession[]>([]);
   const [currentSession, setCurrentSession] = useState<ChatSession | null>(null);
@@ -188,6 +195,83 @@ export function useChatSessions() {
       .eq('id', currentSession.id);
   }, [currentSession]);
 
+  // Process direct commands without AI
+  const processDirectCommand = useCallback(async (content: string): Promise<boolean> => {
+    if (!selectedTask) return false;
+
+    const lowerContent = content.toLowerCase().trim();
+
+    // Command: Finalizar/Completar task
+    if (lowerContent.match(/^(finalizar|completar|concluir|marcar como (finalizada|concluída|completa))/)) {
+      await supabase
+        .from('tasks')
+        .update({ is_completed: true })
+        .eq('id', selectedTask.id);
+
+      setSelectedTask(prev => prev ? { ...prev, is_completed: true } : null);
+      await addMessage('assistant', `✅ Tarefa "${selectedTask.title}" marcada como finalizada!`);
+      
+      toast({
+        title: 'Tarefa finalizada!',
+        description: selectedTask.title,
+      });
+      return true;
+    }
+
+    // Command: Reabrir task
+    if (lowerContent.match(/^(reabrir|desmarcar|marcar como pendente|voltar)/)) {
+      await supabase
+        .from('tasks')
+        .update({ is_completed: false })
+        .eq('id', selectedTask.id);
+
+      setSelectedTask(prev => prev ? { ...prev, is_completed: false } : null);
+      await addMessage('assistant', `🔄 Tarefa "${selectedTask.title}" reaberta!`);
+      return true;
+    }
+
+    // Command: Deletar task
+    if (lowerContent.match(/^(deletar|excluir|remover|apagar) (essa |esta |a )?task/)) {
+      await supabase
+        .from('tasks')
+        .delete()
+        .eq('id', selectedTask.id);
+
+      const taskTitle = selectedTask.title;
+      setSelectedTask(null);
+      await clearTaskSelection();
+      await addMessage('assistant', `🗑️ Tarefa "${taskTitle}" foi removida.`);
+      
+      toast({
+        title: 'Tarefa removida',
+        description: taskTitle,
+      });
+      return true;
+    }
+
+    // Command: Mudar título direto (sem IA)
+    const titleMatch = content.match(/^mudar (o )?t[íi]tulo para:?\s*(.+)$/i);
+    if (titleMatch) {
+      const newTitle = titleMatch[2].trim();
+      
+      await supabase
+        .from('tasks')
+        .update({ title: newTitle })
+        .eq('id', selectedTask.id);
+
+      setSelectedTask(prev => prev ? { ...prev, title: newTitle } : null);
+      await addMessage('assistant', `✏️ Título atualizado para: "${newTitle}"`);
+      
+      toast({
+        title: 'Título atualizado!',
+        description: newTitle,
+      });
+      return true;
+    }
+
+    return false;
+  }, [selectedTask, addMessage, clearTaskSelection, toast]);
+
   // Send message to chatbot
   const sendMessage = useCallback(async (content: string, tasks: Task[]) => {
     let session = currentSession;
@@ -198,67 +282,133 @@ export function useChatSessions() {
       session = newSession;
     }
 
-    // Check if user is requesting task list with #
-    if (content.trim() === '#') {
-      await addMessage('user', content);
-      
-      if (tasks.length === 0) {
-        await addMessage('assistant', 'Você não tem nenhuma tarefa cadastrada ainda.');
-      } else {
-        await addMessage('assistant', 'Aqui estão suas tarefas. Clique em uma para selecioná-la:', {
-          type: 'task_list',
-          tasks,
-        });
-      }
+    await addMessage('user', content);
+
+    // Try to process as direct command first
+    const wasDirectCommand = await processDirectCommand(content);
+    if (wasDirectCommand) {
       return;
     }
 
-    await addMessage('user', content);
     setIsLoading(true);
 
     try {
-      const { data, error } = await supabase.functions.invoke('chatbot', {
-        body: { 
-          message: content,
-          selectedTask: selectedTask,
-          sessionId: session.id,
-        },
-      });
+      // Build context for N8N
+      const context = {
+        message: content,
+        selectedTask: selectedTask ? {
+          id: selectedTask.id,
+          title: selectedTask.title,
+          is_completed: selectedTask.is_completed,
+          enhanced_title: selectedTask.enhanced_title,
+          status: selectedTask.status,
+        } : null,
+        sessionId: session.id,
+        allTasks: tasks.map(t => ({
+          id: t.id,
+          title: t.title,
+          is_completed: t.is_completed,
+        })),
+      };
 
-      if (error) throw error;
-
-      // Check if AI wants to update the task
-      if (data.action === 'update_task' && data.updates && selectedTask) {
-        const { error: updateError } = await supabase
-          .from('tasks')
-          .update(data.updates)
-          .eq('id', selectedTask.id);
-
-        if (!updateError) {
-          // Refresh selected task
-          const { data: updatedTask } = await supabase
-            .from('tasks')
-            .select('*')
-            .eq('id', selectedTask.id)
-            .single();
-          
-          if (updatedTask) {
-            setSelectedTask(updatedTask as Task);
-          }
-        }
+      const webhookUrl = import.meta.env.VITE_N8N_CHATBOT_WEBHOOK_URL;
+      
+      console.log('Chatbot webhook URL:', webhookUrl);
+      console.log('Sending to N8N:', context);
+      
+      if (!webhookUrl) {
+        throw new Error('N8N Chatbot webhook URL not configured');
       }
 
-      // Check if AI wants to complete the task
-      if (data.action === 'complete_task' && selectedTask) {
+      const response = await fetch(webhookUrl, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(context),
+      });
+
+      console.log('N8N response status:', response.status);
+
+      if (!response.ok) {
+        const errorText = await response.text();
+        console.error('N8N error response:', errorText);
+        throw new Error(`N8N webhook failed: ${response.status} - ${errorText}`);
+      }
+
+      const responseText = await response.text();
+      console.log('N8N raw response:', responseText);
+
+      let data;
+      let aiResponse;
+
+      try {
+        // Try to parse as JSON
+        data = JSON.parse(responseText);
+        console.log('N8N Chat response (JSON):', data);
+        
+        // Process AI response from JSON
+        aiResponse = data.response || data.output || data.message || 'Sem resposta do assistente.';
+      } catch (e) {
+        // If not JSON, use text directly
+        console.log('N8N returned plain text, using it directly');
+        aiResponse = responseText || 'Sem resposta do assistente.';
+        data = { response: aiResponse };
+      }
+
+      // Check if AI wants to update the task with confirmation
+      if (data.action === 'update_task' && data.updates && selectedTask) {
+        // If requires_confirmation, store pending update
+        if (data.requires_confirmation) {
+          await addMessage('assistant', aiResponse, {
+            type: 'pending_confirmation',
+            pending_update: {
+              task_id: selectedTask.id,
+              field: Object.keys(data.updates)[0],
+              new_value: Object.values(data.updates)[0] as string,
+              old_value: selectedTask.title,
+            },
+          });
+        } else {
+          // Auto-apply update without confirmation
+          const { error: updateError } = await supabase
+            .from('tasks')
+            .update(data.updates)
+            .eq('id', selectedTask.id);
+
+          if (!updateError) {
+            // Refresh selected task
+            const { data: updatedTask } = await supabase
+              .from('tasks')
+              .select('*')
+              .eq('id', selectedTask.id)
+              .single();
+            
+            if (updatedTask) {
+              setSelectedTask(updatedTask as Task);
+            }
+            
+            await addMessage('assistant', aiResponse);
+            
+            toast({
+              title: 'Tarefa atualizada!',
+              description: 'As alterações foram aplicadas.',
+            });
+          }
+        }
+      } else if (data.action === 'complete_task' && selectedTask) {
+        // Check if AI wants to complete the task
         await supabase
           .from('tasks')
           .update({ is_completed: true })
           .eq('id', selectedTask.id);
 
         setSelectedTask(prev => prev ? { ...prev, is_completed: true } : null);
+        await addMessage('assistant', aiResponse);
+      } else {
+        // No action, just add response
+        await addMessage('assistant', aiResponse);
       }
-
-      await addMessage('assistant', data.response || 'Sem resposta do assistente.');
     } catch (error) {
       console.error('Error sending message:', error);
       toast({
@@ -266,11 +416,56 @@ export function useChatSessions() {
         description: 'Verifique a conexão com o N8N.',
         variant: 'destructive',
       });
-      await addMessage('assistant', 'Desculpe, não foi possível processar sua mensagem.');
+      await addMessage('assistant', 'Desculpe, não foi possível processar sua mensagem. Tente usar comandos diretos como: "finalizar essa task" ou "mudar o título para [novo título]".');
     } finally {
       setIsLoading(false);
     }
-  }, [currentSession, selectedTask, createSession, addMessage, toast]);
+  }, [currentSession, selectedTask, createSession, addMessage, processDirectCommand, toast]);
+
+  // Confirm pending update
+  const confirmUpdate = useCallback(async (messageId: string, pendingUpdate: PendingUpdate) => {
+    if (!pendingUpdate || !selectedTask) return;
+
+    const updates = {
+      [pendingUpdate.field]: pendingUpdate.new_value,
+    };
+
+    const { error: updateError } = await supabase
+      .from('tasks')
+      .update(updates)
+      .eq('id', pendingUpdate.task_id);
+
+    if (!updateError) {
+      // Refresh selected task
+      const { data: updatedTask } = await supabase
+        .from('tasks')
+        .select('*')
+        .eq('id', pendingUpdate.task_id)
+        .single();
+      
+      if (updatedTask) {
+        setSelectedTask(updatedTask as Task);
+      }
+
+      await addMessage('system', '✅ Alteração confirmada e aplicada!');
+      
+      toast({
+        title: 'Tarefa atualizada!',
+        description: `${pendingUpdate.field} foi alterado com sucesso.`,
+      });
+    } else {
+      toast({
+        title: 'Erro ao atualizar',
+        description: 'Tente novamente.',
+        variant: 'destructive',
+      });
+    }
+  }, [selectedTask, addMessage, toast]);
+
+  // Reject pending update
+  const rejectUpdate = useCallback(async () => {
+    await addMessage('system', '❌ Alteração cancelada.');
+  }, [addMessage]);
 
   // Initialize
   useEffect(() => {
@@ -289,5 +484,7 @@ export function useChatSessions() {
     sendMessage,
     selectTaskForChat,
     clearTaskSelection,
+    confirmUpdate,
+    rejectUpdate,
   };
 }

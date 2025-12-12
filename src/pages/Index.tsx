@@ -19,6 +19,8 @@ const Index = () => {
     sendMessage,
     selectTaskForChat,
     clearTaskSelection,
+    confirmUpdate,
+    rejectUpdate,
   } = useChatSessions();
 
   const handleCreateTask = async (title: string) => {
@@ -72,6 +74,12 @@ const Index = () => {
                 onDeleteSession={deleteSession}
                 onSelectTask={selectTaskForChat}
                 onClearTaskSelection={clearTaskSelection}
+                onConfirmUpdate={async (messageId, pendingUpdate) => {
+                  await confirmUpdate(messageId, pendingUpdate);
+                  // Small delay to ensure DB is updated
+                  setTimeout(() => refetch(), 300);
+                }}
+                onRejectUpdate={rejectUpdate}
               />
             </div>
           </div>
