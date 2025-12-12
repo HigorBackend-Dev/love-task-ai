@@ -66,26 +66,22 @@ export function TaskItem({ task, onToggle, onUpdate, onDelete }: TaskItemProps) 
             </div>
           ) : (
             <>
-              <p className={cn(
-                "font-medium text-foreground leading-relaxed",
-                task.is_completed && "line-through text-muted-foreground"
-              )}>
-                {task.title}
-              </p>
+              <div className="flex items-start gap-2">
+                <p className={cn(
+                  "font-medium text-foreground leading-relaxed flex-1",
+                  task.is_completed && "line-through text-muted-foreground"
+                )}>
+                  {task.status === 'enhanced' && task.enhanced_title ? task.enhanced_title : task.title}
+                </p>
+                {task.status === 'enhanced' && task.enhanced_title && (
+                  <Sparkles className="h-4 w-4 text-primary mt-0.5 flex-shrink-0" />
+                )}
+              </div>
               
               {task.status === 'enhancing' && (
                 <div className="flex items-center gap-2 mt-2 text-sm text-muted-foreground">
                   <Loader2 className="h-4 w-4 animate-spin" />
                   <span>Melhorando com IA...</span>
-                </div>
-              )}
-              
-              {task.status === 'enhanced' && task.enhanced_title && (
-                <div className="flex items-start gap-2 mt-2 p-3 rounded-md bg-primary/5 border border-primary/10">
-                  <Sparkles className="h-4 w-4 text-primary mt-0.5 flex-shrink-0" />
-                  <p className="text-sm text-foreground/80">
-                    {task.enhanced_title}
-                  </p>
                 </div>
               )}
               

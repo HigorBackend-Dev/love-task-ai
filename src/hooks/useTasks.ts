@@ -71,25 +71,96 @@ export function useTasks() {
         prev.map(t => t.id === taskId ? { ...t, status: 'enhancing' as const } : t)
       );
 
-      const { data, error } = await supabase.functions.invoke('enhance-task', {
+      console.log('Calling Edge Function with:', { taskId, title });
+      
+      const response = await supabase.functions.invoke('enhance-task', {
         body: { taskId, title },
       });
 
-      if (error) throw error;
+      console.log('Raw Edge Function response:', response);
+      
+      const { data, error } = response;
 
-      // Update task with enhanced title
-      setTasks(prev =>
-        prev.map(t =>
-          t.id === taskId
-            ? { ...t, enhanced_title: data.enhanced_title, status: 'enhanced' as const }
-            : t
-        )
-      );
+      if (error) {
+        console.error('Edge Function error:', error);
+        throw error;
+      }
+
+      console.log('Enhanced task data:', data);
+      console.log('Enhanced title from response:', data?.enhanced_title);
+
+      // Verify if we got the enhanced title back
+      if (data && data.enhanced_title) {
+        // Update the title in database to the enhanced version
+        const { error: updateError } = await supabase
+          .from('tasks')
+          .update({ title: data.enhanced_title })
+          .eq('id', taskId);
+
+        if (updateError) {
+          console.error('Error updating title:', updateError);
+        }
+
+        // Update task with enhanced title from response
+        setTasks(prev =>
+          prev.map(t =>
+            t.id === taskId
+              ? { ...t, title: data.enhanced_title, enhanced_title: data.enhanced_title, status: 'enhanced' as const }
+              : t
+          )
+        );
+        
+        toast({
+          title: 'Tarefa melhorada!',
+          description: 'O título foi aprimorado pela IA.',
+        });
+      } else {
+        // If no enhanced title in response, fetch from database
+        console.log('No enhanced_title in response, fetching from database...');
+        const { data: taskData, error: fetchError } = await supabase
+          .from('tasks')
+          .select('*')
+          .eq('id', taskId)
+          .single();
+
+        if (fetchError) throw fetchError;
+
+        if (taskData && taskData.enhanced_title) {
+          // Update the title to match enhanced title
+          const { error: updateError } = await supabase
+            .from('tasks')
+            .update({ title: taskData.enhanced_title })
+            .eq('id', taskId);
+
+          if (updateError) {
+            console.error('Error updating title:', updateError);
+          }
+
+          setTasks(prev =>
+            prev.map(t =>
+              t.id === taskId
+                ? { ...t, title: taskData.enhanced_title, enhanced_title: taskData.enhanced_title, status: 'enhanced' as const }
+                : t
+            )
+          );
+          
+          toast({
+            title: 'Tarefa melhorada!',
+            description: 'O título foi aprimorado pela IA.',
+          });
+        }
+      }
     } catch (error) {
       console.error('Error enhancing task:', error);
       setTasks(prev =>
         prev.map(t => t.id === taskId ? { ...t, status: 'error' as const } : t)
       );
+      
+      toast({
+        title: 'Erro ao melhorar tarefa',
+        description: 'Não foi possível processar com a IA.',
+        variant: 'destructive',
+      });
     }
   };
 
@@ -175,7 +246,44 @@ export function useTasks() {
 
   useEffect(() => {
     fetchTasks();
-  }, [fetchTasks]);
+
+    // Subscribe to realtime updates for enhanced titles
+    const channel = supabase
+      .channel('tasks-changes')
+      .on(
+        'postgres_changes',
+        {
+          event: 'UPDATE',
+          schema: 'public',
+          table: 'tasks',
+        },
+        (payload) => {
+          console.log('Task updated via realtime:', payload);
+          const updatedTask = payload.new as Task;
+          
+          setTasks(prev =>
+            prev.map(t =>
+              t.id === updatedTask.id
+                ? updatedTask
+                : t
+            )
+          );
+          
+          // Show notification if enhanced_title was updated
+          if (updatedTask.enhanced_title && updatedTask.status === 'enhanced') {
+            toast({
+              title: 'Tarefa melhorada!',
+              description: 'O título foi aprimorado pela IA.',
+            });
+          }
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [fetchTasks, toast]);
 
   return {
     tasks,

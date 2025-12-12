@@ -1,4 +1,6 @@
+// @deno-types="https://deno.land/std@0.168.0/http/server.ts"
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
+// @deno-types="https://esm.sh/@supabase/supabase-js@2"
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
 const corsHeaders = {
@@ -48,7 +50,24 @@ serve(async (req) => {
     const n8nData = await n8nResponse.json();
     console.log(`[enhance-task] N8N response:`, n8nData);
 
-    const enhancedTitle = n8nData.enhanced_title || n8nData.response || title;
+    // Extract enhanced title from various possible response formats
+    let enhancedTitle = title; // fallback to original
+    
+    if (n8nData.enhanced_title) {
+      enhancedTitle = n8nData.enhanced_title;
+    } else if (n8nData.title) {
+      enhancedTitle = n8nData.title;
+    } else if (n8nData.output) {
+      enhancedTitle = n8nData.output;
+    } else if (n8nData.response) {
+      enhancedTitle = n8nData.response;
+    } else if (n8nData.result) {
+      enhancedTitle = n8nData.result;
+    } else if (typeof n8nData === 'string') {
+      enhancedTitle = n8nData;
+    }
+    
+    console.log(`[enhance-task] Extracted enhanced title: "${enhancedTitle}"`);
 
     // Update task in Supabase
     const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
