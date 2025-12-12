@@ -28,7 +28,6 @@ export function useChatSessions() {
       return;
     }
 
-    // @ts-expect-error - user_id, message_count, last_message_at not in generated types yet
     const { data, error } = await supabase
       .from('chat_sessions')
       .select('*')
@@ -98,9 +97,7 @@ export function useChatSessions() {
       ...data,
       user_id: user.id,
       title: data.title || 'Nova Conversa',
-      // @ts-expect-error - message_count not in generated types yet
       message_count: data.message_count || 0,
-      // @ts-expect-error - last_message_at not in generated types yet
       last_message_at: data.last_message_at || null
     };
     setSessions(prev => [session, ...prev]);

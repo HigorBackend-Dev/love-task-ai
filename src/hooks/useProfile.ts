@@ -3,6 +3,7 @@ import { supabase } from '@/integrations/supabase/client';
 import { Profile } from '@/types/task';
 import { useToast } from '@/hooks/use-toast';
 import { useAuth } from '@/contexts/AuthContext';
+import type { Database } from '@/integrations/supabase/types';
 
 export function useProfile() {
   const [profile, setProfile] = useState<Profile | null>(null);
@@ -15,7 +16,6 @@ export function useProfile() {
 
     try {
       const { data, error } = await supabase
-        // @ts-expect-error - profiles table not in generated types yet
         .from('profiles')
         .select('*')
         .eq('id', user.id)
@@ -86,9 +86,8 @@ export function useProfile() {
 
     try {
       const { error } = await supabase
-        // @ts-expect-error - profiles table not in generated types yet
         .from('profiles')
-        .update(updates)
+        .update(updates as Database['public']['Tables']['profiles']['Update'])
         .eq('id', user.id);
 
       if (error) throw error;

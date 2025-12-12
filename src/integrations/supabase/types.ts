@@ -53,23 +53,32 @@ export type Database = {
         Row: {
           created_at: string
           id: string
+          last_message_at: string | null
+          message_count: number
           selected_task_id: string | null
           title: string | null
           updated_at: string
+          user_id: string
         }
         Insert: {
           created_at?: string
           id?: string
+          last_message_at?: string | null
+          message_count?: number
           selected_task_id?: string | null
           title?: string | null
           updated_at?: string
+          user_id: string
         }
         Update: {
           created_at?: string
           id?: string
+          last_message_at?: string | null
+          message_count?: number
           selected_task_id?: string | null
           title?: string | null
           updated_at?: string
+          user_id?: string
         }
         Relationships: [
           {
@@ -81,6 +90,36 @@ export type Database = {
           },
         ]
       }
+      profiles: {
+        Row: {
+          avatar_url: string | null
+          created_at: string
+          email: string
+          full_name: string | null
+          id: string
+          preferences: Json | null
+          updated_at: string
+        }
+        Insert: {
+          avatar_url?: string | null
+          created_at?: string
+          email: string
+          full_name?: string | null
+          id: string
+          preferences?: Json | null
+          updated_at?: string
+        }
+        Update: {
+          avatar_url?: string | null
+          created_at?: string
+          email?: string
+          full_name?: string | null
+          id?: string
+          preferences?: Json | null
+          updated_at?: string
+        }
+        Relationships: []
+      }
       tasks: {
         Row: {
           created_at: string | null
@@ -89,6 +128,7 @@ export type Database = {
           is_completed: boolean | null
           status: string | null
           title: string
+          user_id: string
         }
         Insert: {
           created_at?: string | null
@@ -97,6 +137,7 @@ export type Database = {
           is_completed?: boolean | null
           status?: string | null
           title: string
+          user_id: string
         }
         Update: {
           created_at?: string | null
@@ -105,15 +146,33 @@ export type Database = {
           is_completed?: boolean | null
           status?: string | null
           title?: string
+          user_id?: string
         }
         Relationships: []
       }
     }
     Views: {
-      [_ in never]: never
+      user_stats: {
+        Row: {
+          completed_tasks: number | null
+          email: string | null
+          total_chat_sessions: number | null
+          total_messages: number | null
+          total_tasks: number | null
+          user_id: string | null
+          user_since: string | null
+        }
+        Relationships: []
+      }
     }
     Functions: {
-      [_ in never]: never
+      cleanup_old_data: {
+        Args: { days_to_keep?: number }
+        Returns: {
+          deleted_sessions: number
+          deleted_tasks: number
+        }[]
+      }
     }
     Enums: {
       [_ in never]: never

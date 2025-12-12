@@ -18,7 +18,7 @@ export function useTasks() {
     }
 
     try {
-      // @ts-expect-error - Supabase type inference can be complex with RLS
+
       const { data, error } = await supabase
         .from('tasks')
         .select('*')

@@ -27,6 +27,33 @@ CREATE INDEX IF NOT EXISTS idx_profiles_email ON public.profiles(email);
 -- 2. ATUALIZAR TASKS TABLE com constraints e índices
 -- ================================================================
 
+-- Adicionar coluna user_id se não existir
+ALTER TABLE public.tasks 
+  ADD COLUMN IF NOT EXISTS user_id UUID;
+
+-- Preencher user_id existentes com o primeiro usuário disponível
+-- Se não houver usuários, deleta as tasks órfãs
+DO $$
+DECLARE
+  first_user_id UUID;
+BEGIN
+  -- Pega o primeiro usuário do sistema
+  SELECT id INTO first_user_id FROM auth.users ORDER BY created_at ASC LIMIT 1;
+  
+  IF first_user_id IS NOT NULL THEN
+    -- Atribui as tasks órfãs ao primeiro usuário
+    UPDATE public.tasks 
+    SET user_id = first_user_id 
+    WHERE user_id IS NULL;
+    
+    RAISE NOTICE 'Tasks órfãs atribuídas ao usuário: %', first_user_id;
+  ELSE
+    -- Se não há usuários, deleta as tasks órfãs
+    DELETE FROM public.tasks WHERE user_id IS NULL;
+    RAISE NOTICE 'Tasks órfãs deletadas (sem usuários no sistema)';
+  END IF;
+END $$;
+
 -- Adicionar constraint para garantir user_id
 ALTER TABLE public.tasks 
   ALTER COLUMN user_id SET NOT NULL;
@@ -56,6 +83,33 @@ CREATE INDEX IF NOT EXISTS idx_tasks_user_status ON public.tasks(user_id, status
 -- ================================================================
 -- 3. ATUALIZAR CHAT_SESSIONS com estrutura robusta
 -- ================================================================
+
+-- Adicionar coluna user_id se não existir
+ALTER TABLE public.chat_sessions 
+  ADD COLUMN IF NOT EXISTS user_id UUID;
+
+-- Preencher user_id existentes com o primeiro usuário disponível
+-- Se não houver usuários, deleta as sessões órfãs
+DO $$
+DECLARE
+  first_user_id UUID;
+BEGIN
+  -- Pega o primeiro usuário do sistema
+  SELECT id INTO first_user_id FROM auth.users ORDER BY created_at ASC LIMIT 1;
+  
+  IF first_user_id IS NOT NULL THEN
+    -- Atribui as sessões órfãs ao primeiro usuário
+    UPDATE public.chat_sessions 
+    SET user_id = first_user_id 
+    WHERE user_id IS NULL;
+    
+    RAISE NOTICE 'Sessões órfãs atribuídas ao usuário: %', first_user_id;
+  ELSE
+    -- Se não há usuários, deleta as sessões órfãs
+    DELETE FROM public.chat_sessions WHERE user_id IS NULL;
+    RAISE NOTICE 'Sessões órfãs deletadas (sem usuários no sistema)';
+  END IF;
+END $$;
 
 -- Adicionar constraint para garantir user_id
 ALTER TABLE public.chat_sessions 
