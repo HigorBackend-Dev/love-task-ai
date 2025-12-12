@@ -12,17 +12,17 @@ const translations = {
   'pt-BR': {
     // Tabs
     'chat': 'Chat',
-    'history': 'Histórico',
+    'history': 'History',
     
     // Header
-    'help': 'Ajuda',
+    'help': 'Help',
     
     // Task badge
-    'taskSelected': 'Tarefa selecionada',
+    'taskSelected': 'Selected task',
     
     // Empty states
-    'noConversation': 'Inicie uma nova conversa para interagir com o assistente.',
-    'newConversation': 'Nova Conversa',
+    'noConversation': 'Start a new conversation to interact with the assistant.',
+    'newConversation': 'New Conversation',
     'howCanIHelp': 'Como posso ajudar você hoje?',
     'quickActions': 'Ações Rápidas:',
     'selectTask': 'Selecionar uma tarefa',
@@ -118,7 +118,7 @@ const LanguageContext = createContext<LanguageContextType | undefined>(undefined
 export function LanguageProvider({ children }: { children: ReactNode }) {
   const [language, setLanguageState] = useState<Language>(() => {
     const saved = localStorage.getItem('language');
-    return (saved as Language) || 'pt-BR';
+    return (saved as Language) || 'en';
   });
 
   useEffect(() => {

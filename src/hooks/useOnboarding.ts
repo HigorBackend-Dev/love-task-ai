@@ -27,15 +27,35 @@ export function useOnboarding() {
     if (!user) return;
 
     try {
+      setIsLoading(true);
+      
+      // Try to fetch existing profile with onboarding data
       const { data, error } = await supabase
         .from('profiles')
         .select('onboarding_completed, onboarding_step, onboarding_skipped, onboarding_checklist')
         .eq('id', user.id)
-        .single();
+        .maybeSingle(); // Use maybeSingle to avoid error if doesn't exist
 
-      if (error) throw error;
+      if (error) {
+        console.warn('Error fetching onboarding state (possibly columns don\'t exist):', error);
+        // Fallback: assume new user needs onboarding but don't auto-activate
+        setState({
+          completed: false,
+          currentStep: 0,
+          skipped: false,
+          checklist: {
+            created_task: false,
+            completed_task: false,
+            started_chat: false,
+            viewed_dashboard: false, // Changed to false as default
+          },
+        });
+        setIsActive(false); // Don't auto-activate on error
+        return;
+      }
 
       if (data) {
+        // Data found, user has onboarding info
         setState({
           // @ts-expect-error - onboarding fields not in generated types yet
           completed: data.onboarding_completed || false,
@@ -51,15 +71,41 @@ export function useOnboarding() {
             viewed_dashboard: false,
           },
         });
-
-        // Ativar onboarding automaticamente se não foi completado nem pulado
+        
+        // Only auto-activate if not completed and not skipped
         // @ts-expect-error - onboarding fields not in generated types yet
-        if (!data.onboarding_completed && !data.onboarding_skipped) {
-          setIsActive(true);
-        }
+        setIsActive(!(data.onboarding_completed || data.onboarding_skipped));
+      } else {
+        // No onboarding data found - treat as new user
+        setState({
+          completed: false,
+          currentStep: 0,
+          skipped: false,
+          checklist: {
+            created_task: false,
+            completed_task: false,
+            started_chat: false,
+            viewed_dashboard: false,
+          },
+        });
+        // For brand new users, don't auto-activate immediately
+        setIsActive(false);
       }
     } catch (error) {
       console.error('Error fetching onboarding state:', error);
+      // Set default state on error - but don't auto-activate for existing users
+      setState({
+        completed: false,
+        currentStep: 0,
+        skipped: false,
+        checklist: {
+          created_task: false,
+          completed_task: false,
+          started_chat: false,
+          viewed_dashboard: false,
+        },
+      });
+      setIsActive(false);
     } finally {
       setIsLoading(false);
     }
@@ -69,12 +115,12 @@ export function useOnboarding() {
     fetchOnboardingState();
   }, [fetchOnboardingState]);
 
-  // Avançar para próximo passo
+  // Advance to next step
   const nextStep = useCallback(async () => {
     if (!user) return;
 
-    const newStep = state.currentStep + 1;
-    setState((prev) => ({ ...prev, currentStep: newStep }));
+    const newStep = Math.min(state.currentStep + 1, 3);
+    setState(prev => ({ ...prev, currentStep: newStep }));
 
     try {
       await supabase
@@ -87,12 +133,12 @@ export function useOnboarding() {
     }
   }, [user, state.currentStep]);
 
-  // Voltar para passo anterior
+  // Go back to previous step
   const previousStep = useCallback(async () => {
-    if (!user || state.currentStep === 0) return;
-
-    const newStep = state.currentStep - 1;
-    setState((prev) => ({ ...prev, currentStep: newStep }));
+    if (!user) return;
+    
+    const newStep = Math.max(state.currentStep - 1, 0);
+    setState(prev => ({ ...prev, currentStep: newStep }));
 
     try {
       await supabase
@@ -105,58 +151,70 @@ export function useOnboarding() {
     }
   }, [user, state.currentStep]);
 
-  // Completar onboarding
+  // Complete onboarding
   const completeOnboarding = useCallback(async () => {
     if (!user) return;
 
-    setState((prev) => ({ ...prev, completed: true }));
+    setState(prev => ({ ...prev, completed: true }));
     setIsActive(false);
-
+    
     try {
-      // @ts-expect-error - RPC function not in generated types yet
-      await supabase.rpc('complete_onboarding', { user_id: user.id });
+      await supabase
+        .from('profiles')
+        .update({ 
+          // @ts-expect-error - onboarding fields not in update type yet
+          onboarding_completed: true,
+          onboarding_step: 3 
+        })
+        .eq('id', user.id);
 
       toast({
-        title: '🎉 Onboarding concluído!',
-        description: 'Você está pronto para usar o sistema.',
+        title: '🎉 Parabéns!',
+        description: 'Você concluiu o tour de integração!',
       });
     } catch (error) {
       console.error('Error completing onboarding:', error);
       toast({
-        title: 'Erro ao completar onboarding',
+        title: 'Erro',
+        description: 'Não foi possível salvar o progresso.',
         variant: 'destructive',
       });
     }
   }, [user, toast]);
 
-  // Pular onboarding
+  // Skip onboarding
   const skipOnboarding = useCallback(async () => {
     if (!user) return;
 
-    setState((prev) => ({ ...prev, skipped: true }));
+    setState(prev => ({ ...prev, skipped: true, completed: true }));
     setIsActive(false);
-
+    
     try {
       await supabase
         .from('profiles')
-        .update({
+        .update({ 
           // @ts-expect-error - onboarding fields not in update type yet
           onboarding_skipped: true,
           onboarding_completed: true,
-          onboarding_completed_at: new Date().toISOString(),
+          onboarding_step: 3 
         })
         .eq('id', user.id);
 
       toast({
-        title: 'Tour pulado',
-        description: 'Você pode retomá-lo nas configurações.',
+        title: '👍 Tour ignorado',
+        description: 'Você pode reativar o tour nas configurações.',
       });
     } catch (error) {
       console.error('Error skipping onboarding:', error);
+      toast({
+        title: 'Erro',
+        description: 'Não foi possível salvar a preferência.',
+        variant: 'destructive',
+      });
     }
   }, [user, toast]);
 
-  // Reiniciar onboarding
+  // Restart onboarding
   const restartOnboarding = useCallback(async () => {
     if (!user) return;
 
@@ -172,16 +230,21 @@ export function useOnboarding() {
       },
     });
     setIsActive(true);
-
+    
     try {
       await supabase
         .from('profiles')
-        .update({
+        .update({ 
           // @ts-expect-error - onboarding fields not in update type yet
           onboarding_completed: false,
-          onboarding_step: 0,
           onboarding_skipped: false,
-          onboarding_completed_at: null,
+          onboarding_step: 0,
+          onboarding_checklist: {
+            created_task: false,
+            completed_task: false,
+            started_chat: false,
+            viewed_dashboard: false,
+          }
         })
         .eq('id', user.id);
     } catch (error) {
@@ -189,12 +252,12 @@ export function useOnboarding() {
     }
   }, [user]);
 
-  // Atualizar item do checklist
+  // Update checklist item
   const updateChecklistItem = useCallback(
     async (item: keyof OnboardingState['checklist'], completed: boolean = true) => {
       if (!user) return;
 
-      setState((prev) => ({
+      setState(prev => ({
         ...prev,
         checklist: {
           ...prev.checklist,
@@ -203,26 +266,31 @@ export function useOnboarding() {
       }));
 
       try {
-        // @ts-expect-error - RPC function not in generated types yet
-        await supabase.rpc('update_onboarding_checklist', {
-          user_id: user.id,
-          checklist_item: item,
-          completed,
-        });
+        // Get current checklist from state
+        const newChecklist = {
+          ...state.checklist,
+          [item]: completed,
+        };
+
+        await supabase
+          .from('profiles')
+          // @ts-expect-error - onboarding_checklist not in update type yet
+          .update({ onboarding_checklist: newChecklist })
+          .eq('id', user.id);
       } catch (error) {
         console.error('Error updating checklist:', error);
       }
     },
-    [user]
+    [user, state.checklist]
   );
 
-  // Ativar/desativar manualmente
+  // Set onboarding active/inactive manually
   const setActive = useCallback((active: boolean) => {
     setIsActive(active);
   }, []);
 
   return {
-    state,
+    ...state,
     isLoading,
     isActive,
     nextStep,

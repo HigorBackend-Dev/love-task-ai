@@ -15,7 +15,9 @@ interface TooltipPosition {
 
 export function OnboardingTour() {
   const {
-    state,
+    currentStep,
+    completed,
+    checklist,
     isActive,
     nextStep,
     previousStep,
@@ -28,9 +30,9 @@ export function OnboardingTour() {
   const [isVisible, setIsVisible] = useState(false);
   const tooltipRef = useRef<HTMLDivElement>(null);
 
-  const currentStepData = ONBOARDING_STEPS[state.currentStep];
-  const isLastStep = state.currentStep === ONBOARDING_STEPS.length - 1;
-  const progress = ((state.currentStep + 1) / ONBOARDING_STEPS.length) * 100;
+  const currentStepData = ONBOARDING_STEPS[currentStep];
+  const isLastStep = currentStep === ONBOARDING_STEPS.length - 1;
+  const progress = ((currentStep + 1) / ONBOARDING_STEPS.length) * 100;
   const isCenterModal = !currentStepData?.target || currentStepData?.placement === 'center';
 
   // Calcular posição ideal do tooltip
@@ -180,7 +182,7 @@ export function OnboardingTour() {
     }, 50);
 
     return () => clearTimeout(timer);
-  }, [isActive, state.currentStep, calculatePosition, scrollToTarget]);
+  }, [isActive, currentStep, calculatePosition, scrollToTarget]);
 
   // Recalcular posição em resize/scroll
   useEffect(() => {
@@ -309,7 +311,7 @@ export function OnboardingTour() {
             <div className="space-y-3">
               <div className="flex items-center justify-between text-xs text-muted-foreground">
                 <span>
-                  Passo {state.currentStep + 1} de {ONBOARDING_STEPS.length}
+                  Passo {currentStep + 1} de {ONBOARDING_STEPS.length}
                 </span>
                 <span>{Math.round(progress)}%</span>
               </div>
@@ -322,11 +324,11 @@ export function OnboardingTour() {
                 variant="outline"
                 size="sm"
                 onClick={previousStep}
-                disabled={state.currentStep === 0}
+                disabled={currentStep === 0}
                 className="flex-1"
               >
                 <ChevronLeft className="h-4 w-4 mr-1" />
-                Voltar
+                Back
               </Button>
               
               <Button
@@ -337,11 +339,11 @@ export function OnboardingTour() {
                 {isLastStep ? (
                   <>
                     <Check className="h-4 w-4 mr-1" />
-                    Finalizar
+                    Finish
                   </>
                 ) : (
                   <>
-                    Próximo
+                    Next
                     <ChevronRight className="h-4 w-4 ml-1" />
                   </>
                 )}

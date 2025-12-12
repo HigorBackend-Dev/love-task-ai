@@ -7,6 +7,7 @@ import { AuthProvider } from "@/contexts/AuthContext";
 import { ProtectedRoute } from "@/components/ProtectedRoute";
 import Landing from "./pages/Landing";
 import Auth from "./pages/Auth";
+import ConfirmEmail from "./pages/ConfirmEmail";
 import Dashboard from "./pages/Dashboard";
 import Settings from "./pages/Settings";
 import NotFound from "./pages/NotFound";
@@ -23,6 +24,7 @@ const App = () => (
           <Routes>
             <Route path="/" element={<Landing />} />
             <Route path="/auth" element={<Auth />} />
+            <Route path="/confirm-email" element={<ConfirmEmail />} />
             <Route 
               path="/dashboard" 
               element={

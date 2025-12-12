@@ -28,7 +28,7 @@ export function TaskForm({ onSubmit }: TaskFormProps) {
     <form onSubmit={handleSubmit} className="flex gap-3">
       <Input
         type="text"
-        placeholder="Adicionar nova tarefa..."
+        placeholder="Add new task..."
         value={title}
         onChange={(e) => setTitle(e.target.value)}
         className="flex-1 h-12 text-base bg-card border-border focus:ring-2 focus:ring-primary/20"
@@ -40,7 +40,7 @@ export function TaskForm({ onSubmit }: TaskFormProps) {
         className="h-12 px-6 gap-2"
       >
         <Plus className="h-5 w-5" />
-        Criar
+        Create
       </Button>
     </form>
   );

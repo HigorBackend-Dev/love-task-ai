@@ -1,43 +1,18 @@
 import { Header } from '@/components/Header';
 import { TaskForm } from '@/components/TaskForm';
 import { TaskList } from '@/components/TaskList';
-import { ChatPanel } from '@/components/ChatPanel';
 import { OnboardingTour } from '@/components/OnboardingTour';
 import { useTasks } from '@/hooks/useTasks';
-import { useChatSessions } from '@/hooks/useChatSessions';
+// Chat removed from index page
 import { useOnboarding } from '@/hooks/useOnboarding';
 
 const Index = () => {
   const { tasks, isLoading, createTask, updateTask, toggleComplete, deleteTask, refetch } = useTasks();
   const { updateChecklistItem } = useOnboarding();
-  const {
-    sessions,
-    currentSession,
-    messages,
-    isLoading: chatLoading,
-    selectedTask,
-    createSession,
-    selectSession,
-    deleteSession,
-    sendMessage,
-    selectTaskForChat,
-    clearTaskSelection,
-    confirmUpdate,
-    rejectUpdate,
-  } = useChatSessions();
-
   const handleCreateTask = async (title: string) => {
     await createTask(title);
     // Marcar que usuário criou uma tarefa
     updateChecklistItem('created_task');
-  };
-
-  const handleSendMessage = async (message: string) => {
-    await sendMessage(message, tasks);
-    // Marcar que usuário iniciou chat
-    updateChecklistItem('started_chat');
-    // Refresh tasks after AI might have updated them
-    await refetch();
   };
 
   return (
@@ -45,16 +20,16 @@ const Index = () => {
       <Header />
       
       <main className="container mx-auto px-4 py-8" data-onboarding="dashboard">
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-          {/* Task List Section */}
-          <div className="lg:col-span-2 space-y-6">
+        <div className="grid grid-cols-1 gap-8">
+          {/* Task List Section (full width) */}
+          <div className="space-y-6 lg:col-span-1">
             <div className="bg-card p-6 rounded-lg border" data-onboarding="task-form">
-              <h2 className="text-lg font-semibold text-foreground mb-4">Nova Tarefa</h2>
+              <h2 className="text-lg font-semibold text-foreground mb-4">New Task</h2>
               <TaskForm onSubmit={handleCreateTask} />
             </div>
             
             <div className="bg-card p-6 rounded-lg border" data-onboarding="task-list">
-              <h2 className="text-lg font-semibold text-foreground mb-4">Suas Tarefas</h2>
+              <h2 className="text-lg font-semibold text-foreground mb-4">Your Tasks</h2>
               <TaskList
                 tasks={tasks}
                 isLoading={isLoading}
@@ -65,31 +40,7 @@ const Index = () => {
             </div>
           </div>
           
-          {/* Chat Panel Section */}
-          <div className="lg:col-span-1">
-            <div className="sticky top-8 h-[calc(100vh-8rem)]" data-onboarding="chat-panel">
-              <ChatPanel
-                sessions={sessions}
-                currentSession={currentSession}
-                messages={messages}
-                isLoading={chatLoading}
-                selectedTask={selectedTask}
-                tasks={tasks}
-                onSendMessage={handleSendMessage}
-                onCreateSession={createSession}
-                onSelectSession={selectSession}
-                onDeleteSession={deleteSession}
-                onSelectTask={selectTaskForChat}
-                onClearTaskSelection={clearTaskSelection}
-                onConfirmUpdate={async (messageId, pendingUpdate) => {
-                  await confirmUpdate(messageId, pendingUpdate);
-                  // Small delay to ensure DB is updated
-                  setTimeout(() => refetch(), 300);
-                }}
-                onRejectUpdate={rejectUpdate}
-              />
-            </div>
-          </div>
+          {/* Chat removed from index page */}
         </div>
       </main>
 

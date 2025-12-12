@@ -15,33 +15,79 @@ export function useProfile() {
     if (!user) return;
 
     try {
+      setIsLoading(true);
+      
+      // Primeira tentativa: buscar profile
       const { data, error } = await supabase
         .from('profiles')
         .select('*')
         .eq('id', user.id)
-        .single();
+        .maybeSingle(); // Usar maybeSingle para evitar erro se não existir
 
-      if (error) {
-        // Se profile não existe, será criado automaticamente pelo trigger
-        if (error.code === 'PGRST116') {
-          console.log('Profile will be created automatically');
-          return;
-        }
+      if (error && error.code !== 'PGRST116') {
+        console.error('Error fetching profile:', error);
         throw error;
       }
 
-      setProfile(data as unknown as Profile);
+      if (data) {
+        // Profile encontrado
+        setProfile(data as unknown as Profile);
+      } else {
+        // Profile não existe, tentar criar
+        console.log('Profile not found, creating one...');
+        
+        const newProfile = {
+          id: user.id,
+          email: user.email || '',
+          full_name: user.user_metadata?.full_name || user.email?.split('@')[0] || 'User',
+          avatar_url: user.user_metadata?.avatar_url || null,
+          preferences: {},
+          onboarding_completed: false,
+          onboarding_step: 0,
+          onboarding_skipped: false,
+          onboarding_checklist: {
+            created_task: false,
+            started_chat: false,
+            completed_task: false,
+            used_ai: false
+          }
+        };
+
+        // Tentar inserir novo profile
+        const { data: insertedProfile, error: insertError } = await supabase
+          .from('profiles')
+          .insert(newProfile)
+          .select()
+          .single();
+
+        if (insertError) {
+          console.error('Error creating profile:', insertError);
+          // Se falhar, usar profile local temporário
+          setProfile({
+            ...newProfile,
+            created_at: new Date().toISOString(),
+            updated_at: new Date().toISOString(),
+          });
+        } else {
+          setProfile(insertedProfile as unknown as Profile);
+        }
+      }
     } catch (error) {
       console.error('Error fetching profile:', error);
-      toast({
-        title: 'Erro ao carregar perfil',
-        description: 'Tente novamente.',
-        variant: 'destructive',
+      // Create a fallback profile instead of showing error
+      setProfile({
+        id: user.id,
+        email: user.email || '',
+        full_name: user.user_metadata?.full_name || user.email?.split('@')[0] || 'User',
+        avatar_url: null,
+        preferences: {},
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
       });
     } finally {
       setIsLoading(false);
     }
-  }, [user, toast]);
+  }, [user]);
 
   useEffect(() => {
     if (!user) {

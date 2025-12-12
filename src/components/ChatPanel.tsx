@@ -1,553 +1,640 @@
-import { useState, useRef, useEffect } from 'react';
-import { Send, Bot, User, Trash2, Loader2, MessageSquare, Plus, History, X, CheckCircle2, Pencil, HelpCircle, Languages } from 'lucide-react';
+// Chat UI removed: minimal stub kept to avoid import errors while cleaning up codebase.
+import React, { useState, useRef, useEffect, useCallback, useMemo } from 'react';
+import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { ScrollArea } from '@/components/ui/scroll-area';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { ChatMessage, ChatSession, Task } from '@/types/task';
-import { cn } from '@/lib/utils';
 import { Badge } from '@/components/ui/badge';
+import { Separator } from '@/components/ui/separator';
+import { ScrollArea } from '@/components/ui/scroll-area';
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import {
-  Popover,
-  PopoverContent,
-  PopoverTrigger,
-} from '@/components/ui/popover';
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select';
-import { useLanguage } from '@/contexts/LanguageContext';
+  Hash,
+  CheckCircle2,
+  Sparkles,
+  Bot,
+  MessageSquare,
+  Plus,
+  HelpCircle,
+  User,
+  ArrowUp,
+  Loader2,
+  Send,
+  X,
+  Clock,
+  Trash2,
+  History,
+} from 'lucide-react';
+import { cn } from '@/lib/utils';
+import { useChatSessions } from '@/hooks/useChatSessions';
+import { useTasks } from '@/hooks/useTasks';
+import type { Task } from '@/types/task';
+
+interface ChatMessage {
+  id: string;
+  content: string;
+  role: 'user' | 'assistant';
+  created_at: string;
+  metadata?: Record<string, unknown>;
+}
+
+interface ChatSession {
+  id: string;
+  title: string;
+  message_count?: number;
+  last_message_at?: string;
+}
 
 interface ChatPanelProps {
-  sessions: ChatSession[];
-  currentSession: ChatSession | null;
-  messages: ChatMessage[];
-  isLoading: boolean;
-  selectedTask: Task | null;
-  tasks: Task[];
-  onSendMessage: (message: string, tasks: Task[]) => void;
-  onCreateSession: () => void;
-  onSelectSession: (session: ChatSession) => void;
-  onDeleteSession: (sessionId: string) => void;
-  onSelectTask: (task: Task) => void;
-  onClearTaskSelection: () => void;
-  onConfirmUpdate: (messageId: string, pendingUpdate: {
-    task_id: string;
-    field: string;
-    new_value: string;
-    old_value: string;
-  }) => void;
-  onRejectUpdate: () => void;
+  onSelectTask?: (task: Task) => void;
+  selectedTask?: Task | null;
+  onClearTaskSelection?: () => void;
+  onConfirmUpdate?: (messageId: string, update: Record<string, unknown>) => void;
+  onRejectUpdate?: () => void;
+  onCreateSession?: () => void;
+  onSelectSession?: (session: ChatSession) => void;
+  onDeleteSession?: (sessionId: string) => void;
+}
+
+function formatDate(date: string | Date): string {
+  const d = new Date(date);
+  return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
 }
 
 export function ChatPanel({
-  sessions,
-  currentSession,
-  messages,
-  isLoading,
-  selectedTask,
-  tasks,
-  onSendMessage,
-  onCreateSession,
-  onSelectSession,
-  onDeleteSession,
   onSelectTask,
+  selectedTask = null,
   onClearTaskSelection,
   onConfirmUpdate,
   onRejectUpdate,
+  onCreateSession,
+  onSelectSession,
+  onDeleteSession,
 }: ChatPanelProps) {
-  const { language, setLanguage, t } = useLanguage();
-  const [input, setInput] = useState('');
+  const { tasks } = useTasks();
+  const chatSessions = useChatSessions();
+
   const [activeTab, setActiveTab] = useState<'chat' | 'history'>('chat');
+  const [showScrollToBottom, setShowScrollToBottom] = useState(false);
   const [showTaskDropdown, setShowTaskDropdown] = useState(false);
-  const [filteredTasks, setFilteredTasks] = useState<Task[]>([]);
+  const [input, setInput] = useState('');
+  const [messages, setMessages] = useState<ChatMessage[]>([]);
+  const [sessions, setSessions] = useState<ChatSession[]>([]);
+  const [currentSession, setCurrentSession] = useState<ChatSession | null>(null);
+  const [isLoading, setIsLoading] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
+  const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
 
-  useEffect(() => {
-    if (scrollRef.current) {
-      scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
-    }
-  }, [messages]);
+  const handleInputChange = useCallback(
+    (e: React.ChangeEvent<HTMLInputElement>) => {
+      setInput(e.target.value);
+      setShowTaskDropdown(e.target.value.includes('#'));
+    },
+    []
+  );
 
-  const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const value = e.target.value;
-    setInput(value);
+  const handleQuickAction = useCallback(
+    (action: string) => {
+      setInput(action);
+      setShowTaskDropdown(action === '#');
+    },
+    []
+  );
 
-    // Detectar # no final do texto
-    if (value.endsWith('#')) {
-      setFilteredTasks(tasks);
-      setShowTaskDropdown(true);
-    } else if (value.includes('#')) {
-      // Filtrar tasks baseado no texto após #
-      const lastHashIndex = value.lastIndexOf('#');
-      const searchTerm = value.slice(lastHashIndex + 1).toLowerCase();
-      
-      if (searchTerm === '') {
-        setFilteredTasks(tasks);
-        setShowTaskDropdown(true);
-      } else {
-        const filtered = tasks.filter(task => 
-          task.title.toLowerCase().includes(searchTerm)
-        );
-        setFilteredTasks(filtered);
-        setShowTaskDropdown(filtered.length > 0);
-      }
-    } else {
+  const handleTaskSelect = useCallback(
+    (task: Task) => {
+      onSelectTask?.(task);
       setShowTaskDropdown(false);
-    }
-  };
+    },
+    [onSelectTask]
+  );
 
-  const handleTaskSelect = (task: Task) => {
-    // Remove o # e qualquer texto após ele
-    const lastHashIndex = input.lastIndexOf('#');
-    const newInput = input.slice(0, lastHashIndex);
-    
-    onSelectTask(task);
-    setInput(newInput.trim());
-    setShowTaskDropdown(false);
-    inputRef.current?.focus();
-  };
+  const scrollToBottom = useCallback(() => {
+    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+  }, []);
 
-  const handleSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!input.trim() || isLoading) return;
-    setShowTaskDropdown(false);
-    onSendMessage(input.trim(), tasks);
-    setInput('');
-  };
+  const handleSubmit = useCallback(
+    (e?: React.FormEvent<HTMLFormElement>) => {
+      if (e) e.preventDefault();
+      if (!input.trim() || isLoading) return;
+      
+      // Add message to conversation
+      setMessages(prev => [...prev, {
+        id: Date.now().toString(),
+        content: input,
+        role: 'user',
+        created_at: new Date().toISOString(),
+      }]);
+      setInput('');
+    },
+    [input, isLoading]
+  );
 
-  const handleTaskClick = (task: Task) => {
-    onSelectTask(task);
-  };
+  const renderEmptyState = () => (
+    <div className="flex-1 flex flex-col items-center justify-center p-6 text-center min-h-[300px]">
+      <div className="w-16 h-16 rounded-full bg-gradient-to-br from-primary/20 to-primary/10 flex items-center justify-center mb-4">
+        <MessageSquare className="h-8 w-8 text-primary" />
+      </div>
+      <h3 className="text-lg font-semibold mb-2">Ready to chat!</h3>
+      <p className="text-muted-foreground text-sm mb-6 max-w-sm">
+        Create a new conversation or select an existing one to get started.
+      </p>
+      <Button onClick={() => onCreateSession?.()} className="gap-2">
+        <Plus className="h-4 w-4" />
+        Start New Chat
+      </Button>
+    </div>
+  );
 
-  const formatDate = (dateString: string) => {
-    return new Date(dateString).toLocaleDateString('pt-BR', {
-      day: '2-digit',
-      month: '2-digit',
-      hour: '2-digit',
-      minute: '2-digit',
-    });
-  };
+  const filteredTasks = useMemo(
+    () => tasks.filter((task) => !task.is_completed || selectedTask?.id === task.id),
+    [tasks, selectedTask]
+  );
 
-  return (
-    <div className="flex flex-col h-full bg-card rounded-lg border">
-      {/* Header with Tabs */}
-      <div className="border-b">
-        <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as 'chat' | 'history')}>
-          <div className="flex items-center justify-between p-2 sm:p-3">
-            <TabsList className="grid grid-cols-2 w-[180px] sm:w-[200px]">
-              <TabsTrigger value="chat" className="text-xs sm:text-sm">
-                <MessageSquare className="h-3 w-3 sm:h-4 sm:w-4 sm:mr-1" />
-                <span className="hidden sm:inline">{t('chat')}</span>
-              </TabsTrigger>
-              <TabsTrigger value="history" className="text-xs sm:text-sm">
-                <History className="h-3 w-3 sm:h-4 sm:w-4 sm:mr-1" />
-                <span className="hidden sm:inline">{t('history')}</span>
-              </TabsTrigger>
-            </TabsList>
-            <div className="flex gap-1 sm:gap-2">
-              <Select value={language} onValueChange={(val) => setLanguage(val as 'pt-BR' | 'en')}>
-                <SelectTrigger className="w-[70px] h-8 text-xs border-none shadow-none focus:ring-0">
-                  <Languages className="h-3.5 w-3.5 mr-1" />
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="pt-BR">🇧🇷 PT</SelectItem>
-                  <SelectItem value="en">🇺🇸 EN</SelectItem>
-                </SelectContent>
-              </Select>
-              <Popover>
-                <PopoverTrigger asChild>
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    className="text-muted-foreground hover:text-foreground"
-                  >
-                    <HelpCircle className="h-4 w-4" />
-                  </Button>
-                </PopoverTrigger>
-                <PopoverContent className="w-80" align="end">
-                  <div className="space-y-3">
-                    <h4 className="font-semibold text-sm">{t('howToUse')}</h4>
-                    
-                    <div className="space-y-2 text-xs">
-                      <div>
-                        <p className="font-medium text-muted-foreground mb-1">{t('step1')}</p>
-                        <p className="text-muted-foreground"><code className="bg-muted px-1 rounded">#</code> {t('step1Desc')}</p>
-                      </div>
-                      
-                      <div>
-                        <p className="font-medium text-muted-foreground mb-1">{t('step2')}</p>
-                        <ul className="text-muted-foreground space-y-0.5 ml-2">
-                          <li>• <code className="bg-muted px-1 rounded">finalizar</code> - {t('step2Cmd1')}</li>
-                          <li>• <code className="bg-muted px-1 rounded">reabrir</code> - {t('step2Cmd2')}</li>
-                          <li>• <code className="bg-muted px-1 rounded">deletar essa task</code> - {t('step2Cmd3')}</li>
-                          <li>• <code className="bg-muted px-1 rounded">mudar o título para: [novo]</code> - {t('step2Cmd4')}</li>
-                        </ul>
-                      </div>
-                      
-                      <div>
-                        <p className="font-medium text-muted-foreground mb-1">{t('step3')}</p>
-                        <ul className="text-muted-foreground space-y-0.5 ml-2">
-                          <li>• <code className="bg-muted px-1 rounded">{t('step3Cmd1')}</code></li>
-                          <li>• <code className="bg-muted px-1 rounded">{t('step3Cmd2')}</code></li>
-                          <li>• {t('step3Cmd3')}</li>
-                        </ul>
-                      </div>
-                    </div>
-                  </div>
-                </PopoverContent>
-              </Popover>
+  const renderMessage = (message: ChatMessage) => (
+    <div
+      key={message.id}
+      className={cn(
+        "flex gap-3 mb-4 animate-in slide-in-from-bottom-3 fade-in-0 duration-500 chat-message-enter",
+        message.role === 'user' ? 'justify-end' : 'justify-start'
+      )}
+    >
+      {message.role === 'assistant' && (
+        <div className="flex-shrink-0 w-8 h-8 rounded-full bg-gradient-to-br from-primary/30 via-primary/20 to-primary/10 flex items-center justify-center mt-0.5 shadow-sm ring-1 ring-primary/10">
+          <Bot className="h-4 w-4 text-primary" />
+        </div>
+      )}
+      
+      <div
+        className={cn(
+          "max-w-[85%] rounded-2xl px-4 py-3 shadow-sm hover:shadow-md transition-shadow duration-200",
+          message.role === 'user'
+            ? 'bg-gradient-to-br from-primary via-primary/95 to-primary/90 text-primary-foreground shadow-primary/20'
+            : 'bg-gradient-to-br from-card via-card/98 to-card/95 border border-border/50 hover:border-border/80'
+        )}
+      >
+        <p className="text-sm leading-relaxed whitespace-pre-wrap">{message.content}</p>
+        
+        {/* Task List Buttons */}
+        {message.metadata?.type === 'task_list' && message.metadata.tasks && (
+          <div className="mt-3 space-y-2">
+            {(message.metadata.tasks as Task[]).map((task: Task) => (
               <Button
-                variant="ghost"
+                key={task.id}
+                variant="outline"
                 size="sm"
-                onClick={onCreateSession}
-                className="text-primary hover:text-primary/80"
+                onClick={() => onSelectTask?.(task)}
+                className="w-full justify-start text-left h-auto py-2 px-3 hover:bg-muted/50"
               >
-                <Plus className="h-4 w-4" />
+                <div className="flex items-center gap-2 w-full">
+                  {task.is_completed ? (
+                    <CheckCircle2 className="h-4 w-4 text-green-500 flex-shrink-0" />
+                  ) : (
+                    <div className="w-4 h-4 rounded-full border-2 border-muted-foreground/30 flex-shrink-0" />
+                  )}
+                  <span className="truncate flex-1">{task.title}</span>
+                </div>
+              </Button>
+            ))}
+          </div>
+        )}
+
+        {/* Pending Updates */}
+        {message.metadata?.type === 'pending_confirmation' && message.metadata.pending_update && (
+          <div className="mt-3 p-3 bg-amber-50 dark:bg-amber-950/20 border border-amber-200 dark:border-amber-800 rounded-lg">
+            <p className="text-sm text-amber-800 dark:text-amber-200 mb-2">
+              <strong>Task:</strong> {String((message.metadata.pending_update as Record<string, unknown>).old_value)}
+            </p>
+            <p className="text-sm text-amber-800 dark:text-amber-200 mb-3">
+              <strong>New Description:</strong> {String((message.metadata.pending_update as Record<string, unknown>).new_value)}
+            </p>
+            <div className="flex gap-2">
+              <Button
+                size="sm"
+                onClick={() => onConfirmUpdate?.(message.id, message.metadata?.pending_update as Record<string, unknown> || {})}
+                className="bg-green-600 hover:bg-green-700 text-white"
+              >
+                <CheckCircle2 className="h-3 w-3 mr-1" />
+                Confirm
+              </Button>
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={onRejectUpdate}
+                className="border-amber-300 text-amber-700 hover:bg-amber-50"
+              >
+                No
               </Button>
             </div>
           </div>
+        )}
 
-          {/* Selected Task Badge */}
+        {/* Confirmed Updates */}
+        {message.metadata?.type === 'confirmed' && (
+          <div className="mt-3 p-3 bg-green-50 dark:bg-green-950/20 border border-green-200 dark:border-green-800 rounded-lg">
+            <p className="text-sm text-green-800 dark:text-green-200">
+              <CheckCircle2 className="h-4 w-4 inline mr-1" />
+              ✅ Alteração confirmada e aplicada com sucesso!
+            </p>
+          </div>
+        )}
+
+        {/* Pending Subtask Creation */}
+        {message.metadata?.type === 'pending_subtask_creation' && (
+          <div className="mt-3 p-3 bg-blue-50 dark:bg-blue-950/20 border border-blue-200 dark:border-blue-800 rounded-lg">
+            <p className="text-sm text-blue-800 dark:text-blue-200 mb-3">
+              <strong>🎯 Estruturar projeto em etapas:</strong>
+            </p>
+            {message.metadata.subtasks && (
+              <div className="mb-3">
+                <p className="text-xs text-blue-700 dark:text-blue-300 mb-2">Subtarefas propostas:</p>
+                <ul className="list-disc list-inside space-y-1">
+                  {(message.metadata.subtasks as string[]).map((subtask: string, index: number) => (
+                    <li key={index} className="text-sm text-blue-800 dark:text-blue-200">
+                      {subtask}
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
+            <div className="flex gap-2">
+              <Button
+                size="sm"
+                onClick={() => onConfirmUpdate?.(message.id, {
+                  task_id: message.metadata.task_id || selectedTask?.id || '',
+                  field: 'subtasks',
+                  new_value: 'create_subtasks',
+                  old_value: selectedTask?.title || '',
+                  subtasks: message.metadata.subtasks as string[],
+                  updates: message.metadata.updates as Record<string, unknown>
+                })}
+                className="bg-blue-600 hover:bg-blue-700 text-white"
+              >
+                <CheckCircle2 className="h-3 w-3 mr-1" />
+                Criar etapas
+              </Button>
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={onRejectUpdate}
+                className="border-blue-300 text-blue-700 hover:bg-blue-50"
+              >
+                Cancelar
+              </Button>
+            </div>
+          </div>
+        )}
+        
+        {message.role === 'assistant' && (
+          <div className="flex items-center justify-between mt-2 pt-2 border-t border-border/30">
+            <span className="text-xs text-muted-foreground">
+              AI Assistant
+            </span>
+            <span className="text-xs text-muted-foreground">
+              {formatDate(message.created_at)}
+            </span>
+          </div>
+        )}
+      </div>
+
+      {message.role === 'user' && (
+        <div className="flex-shrink-0 w-8 h-8 rounded-full bg-gradient-to-br from-blue-500 via-blue-600 to-purple-600 flex items-center justify-center mt-0.5 shadow-sm ring-1 ring-blue-500/20">
+          <User className="h-4 w-4 text-white" />
+        </div>
+      )}
+    </div>
+  );
+
+  return (
+    <Card className="flex flex-col h-full bg-background">
+      <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as 'chat' | 'history')} className="flex flex-col h-full">
+        {/* Header */}
+        <div className="border-b bg-gradient-to-r from-card/80 via-card/90 to-card/80 backdrop-blur-md shadow-sm">
+          <div className="p-4">
+            <div className="flex items-center justify-between mb-3">
+              <div className="flex items-center gap-3">
+                <div className="w-8 h-8 rounded-full bg-gradient-to-br from-primary/30 via-primary/20 to-primary/10 flex items-center justify-center shadow-sm ring-1 ring-primary/10">
+                  <MessageSquare className="h-4 w-4 text-primary" />
+                </div>
+                <div>
+                  <h2 className="font-semibold text-sm">AI Assistant</h2>
+                  <p className="text-xs text-muted-foreground">Always here to help</p>
+                </div>
+              </div>
+              
+              <div className="flex items-center gap-2">
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => onCreateSession?.()}
+                  className="h-8 w-8 p-0 hover:bg-primary/10 hover:scale-105 transition-all duration-200 chat-button-hover"
+                >
+                  <Plus className="h-4 w-4" />
+                </Button>
+                
+                <Popover>
+                  <PopoverTrigger asChild>
+                    <Button variant="ghost" size="sm" className="h-8 w-8 p-0 hover:bg-primary/10 hover:scale-105 transition-all duration-200 chat-button-hover">
+                      <HelpCircle className="h-4 w-4" />
+                    </Button>
+                  </PopoverTrigger>
+                  <PopoverContent className="w-80" align="end">
+                    <div className="space-y-4">
+                      <div className="space-y-2">
+                        <h4 className="font-medium text-sm">How to use the AI Assistant</h4>
+                        <p className="text-xs text-muted-foreground">
+                          Chat naturally or use these commands:
+                        </p>
+                      </div>
+                      
+                      <div className="space-y-3 text-xs">
+                        <div>
+                          <code className="bg-muted px-2 py-1 rounded text-xs">#</code>
+                          <span className="ml-2 text-muted-foreground">Select a task</span>
+                        </div>
+                        <div>
+                          <code className="bg-muted px-2 py-1 rounded text-xs">complete</code>
+                          <span className="ml-2 text-muted-foreground">Mark task as done</span>
+                        </div>
+                        <div>
+                          <code className="bg-muted px-2 py-1 rounded text-xs">improve this task</code>
+                          <span className="ml-2 text-muted-foreground">Enhance with AI</span>
+                        </div>
+                        <div>
+                          <code className="bg-muted px-2 py-1 rounded text-xs">change title to: [new]</code>
+                          <span className="ml-2 text-muted-foreground">Update task title</span>
+                        </div>
+                      </div>
+                      
+                      <Separator />
+                      
+                      <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                        <Sparkles className="h-3 w-3" />
+                        <span>Or just chat naturally about your tasks!</span>
+                      </div>
+                    </div>
+                  </PopoverContent>
+                </Popover>
+              </div>
+            </div>
+
+            <TabsList className="grid w-full grid-cols-2 bg-gradient-to-r from-muted/50 to-muted/30 p-1">
+              <TabsTrigger value="chat" className="gap-2 data-[state=active]:bg-gradient-to-r data-[state=active]:from-background data-[state=active]:to-background/90 data-[state=active]:shadow-sm">
+                <MessageSquare className="h-4 w-4" />
+                Chat
+              </TabsTrigger>
+              <TabsTrigger value="history" className="gap-2 data-[state=active]:bg-gradient-to-r data-[state=active]:from-background data-[state=active]:to-background/90 data-[state=active]:shadow-sm">
+                <History className="h-4 w-4" />
+                History
+              </TabsTrigger>
+            </TabsList>
+          </div>
+
+          {/* Selected Task Display */}
           {selectedTask && activeTab === 'chat' && (
-            <div className="px-2 sm:px-3 pb-2">
-              <Badge variant="secondary" className="flex items-center gap-1 sm:gap-2 w-full justify-between py-1.5 px-2 sm:px-3">
-                <span className="truncate text-xs flex-1 min-w-0">
-                  {selectedTask.is_completed && <CheckCircle2 className="h-3 w-3 inline mr-1 text-green-500 flex-shrink-0" />}
-                  <span className="truncate">{selectedTask.title}</span>
-                </span>
+            <div className="px-4 pb-4">
+              <div className="flex items-center gap-2 p-3 bg-gradient-to-r from-primary/8 via-primary/5 to-primary/8 border border-primary/30 rounded-lg shadow-sm animate-in slide-in-from-top-2 duration-300">
+                <div className="flex items-center gap-2 flex-1 min-w-0">
+                  {selectedTask.is_completed ? (
+                    <CheckCircle2 className="h-4 w-4 text-green-500 flex-shrink-0" />
+                  ) : (
+                    <div className="w-4 h-4 rounded-full border-2 border-primary flex-shrink-0 animate-pulse" />
+                  )}
+                  <span className="text-sm font-medium truncate">{selectedTask.title}</span>
+                  <Badge variant="secondary" className="text-xs bg-gradient-to-r from-primary/20 to-primary/10 text-primary border-primary/20">Selected</Badge>
+                </div>
                 <Button
                   variant="ghost"
                   size="sm"
                   onClick={onClearTaskSelection}
-                  className="h-4 w-4 p-0 hover:bg-transparent flex-shrink-0"
+                  className="h-6 w-6 p-0 hover:bg-destructive/10 hover:text-destructive transition-colors duration-200"
                 >
                   <X className="h-3 w-3" />
                 </Button>
-              </Badge>
+              </div>
             </div>
           )}
+        </div>
 
-          <TabsContent value="chat" className="m-0 flex-1 flex flex-col">
-            {/* Messages */}
-            <ScrollArea className="flex-1 p-2 sm:p-4 h-[300px] sm:h-[400px] md:h-[500px]" ref={scrollRef}>
-              {!currentSession ? (
-                <div className="flex flex-col items-center justify-center h-full text-center py-8">
-                  <Bot className="h-12 w-12 text-muted-foreground/40 mb-3" />
-                  <p className="text-muted-foreground text-sm mb-3">
-                    {t('noConversation')}
-                  </p>
-                  <Button onClick={onCreateSession} variant="outline" size="sm">
-                    <Plus className="h-4 w-4 mr-1" />
-                    {t('newConversation')}
-                  </Button>
-                </div>
-              ) : messages.length === 0 ? (
-                <div className="flex flex-col items-center justify-center h-full text-center py-8">
-                  <Bot className="h-12 w-12 text-muted-foreground/40 mb-3" />
-                  <p className="text-muted-foreground text-sm mb-4">
-                    {t('howCanIHelp')}
-                  </p>
-                  
-                  {/* Quick Actions */}
-                  <div className="space-y-3 w-full max-w-xs">
-                    <p className="text-xs text-muted-foreground font-medium mb-2">{t('quickActions')}</p>
+        <TabsContent value="chat" className="flex-1 flex flex-col m-0">
+          {/* Messages Area */}
+          <div className="flex-1 relative">
+            <ScrollArea className="h-full chat-scroll" ref={scrollRef}>
+              <div className="p-4 space-y-4 chat-messages">
+                {!currentSession ? (
+                  renderEmptyState()
+                ) : messages.length === 0 ? (
+                  <div className="flex-1 flex flex-col items-center justify-center p-6 text-center min-h-[300px]">
+                    <div className="w-16 h-16 rounded-full bg-gradient-to-br from-primary/20 to-primary/10 flex items-center justify-center mb-4">
+                      <Bot className="h-8 w-8 text-primary" />
+                    </div>
+                    <h3 className="text-lg font-semibold mb-2">Ready to assist!</h3>
+                    <p className="text-muted-foreground text-sm mb-6 max-w-sm">
+                      How can I help you manage your tasks today?
+                    </p>
                     
-                    {!selectedTask ? (
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        onClick={() => setInput('#')}
-                        className="w-full justify-start gap-2"
-                      >
-                        <span className="font-mono">#</span>
-                        {t('selectTask')}
-                      </Button>
-                    ) : (
-                      <div className="space-y-2">
+                    {/* Quick Actions Grid */}
+                    <div className="grid grid-cols-2 gap-2 w-full max-w-xs">
+                      {!selectedTask ? (
                         <Button
                           variant="outline"
-                          size="sm"
-                          onClick={() => setInput('finalizar')}
-                          className="w-full justify-start gap-2 text-green-600 hover:text-green-700"
+                          onClick={() => handleQuickAction('#')}
+                          className="col-span-2 gap-2"
                         >
-                          <CheckCircle2 className="h-4 w-4" />
-                          {t('finalizeTask')}
+                          <Hash className="h-4 w-4" />
+                          Select a task
                         </Button>
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          onClick={() => setInput(t('step3Cmd1'))}
-                          className="w-full justify-start gap-2 text-blue-600 hover:text-blue-700"
-                        >
-                          <Bot className="h-4 w-4" />
-                          {t('improveWithAI')}
-                        </Button>
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          onClick={() => setInput('mudar o título para: ')}
-                          className="w-full justify-start gap-2"
-                        >
-                          <Pencil className="h-4 w-4" />
-                          {t('changeTitle')}
-                        </Button>
+                      ) : (
+                        <>
+                          <Button
+                            variant="outline"
+                            onClick={() => handleQuickAction('complete')}
+                            className="gap-2 text-green-600"
+                          >
+                            <CheckCircle2 className="h-4 w-4" />
+                            Complete
+                          </Button>
+                          <Button
+                            variant="outline"
+                            onClick={() => handleQuickAction('improve this task')}
+                            className="gap-2 text-blue-600"
+                          >
+                            <Sparkles className="h-4 w-4" />
+                            Enhance
+                          </Button>
+                        </>
+                      )}
+                    </div>
+                  </div>
+                ) : (
+                  <>
+                    {messages.map(renderMessage)}
+                    <div ref={messagesEndRef} />
+                  </>
+                )}
+                
+                {isLoading && (
+                  <div className="flex justify-start mb-4 animate-in slide-in-from-bottom-2 duration-300">
+                    <div className="flex items-center gap-3">
+                      <div className="w-8 h-8 rounded-full bg-gradient-to-br from-primary/30 via-primary/20 to-primary/10 flex items-center justify-center shadow-sm ring-1 ring-primary/10">
+                        <Bot className="h-4 w-4 text-primary animate-pulse" />
+                      </div>
+                      <div className="bg-gradient-to-br from-card via-card/98 to-card/95 border border-border/50 rounded-2xl px-4 py-3 shadow-sm">
+                        <div className="flex items-center gap-2">
+                          <div className="flex gap-1">
+                          <div className="w-2 h-2 bg-primary rounded-full typing-dot" />
+                          <div className="w-2 h-2 bg-primary rounded-full typing-dot" />
+                          <div className="w-2 h-2 bg-primary rounded-full typing-dot" />
+                          </div>
+                          <span className="text-sm text-muted-foreground">AI is thinking...</span>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                )}
+              </div>
+            </ScrollArea>
+            
+            {/* Scroll to Bottom Button */}
+            {showScrollToBottom && (
+              <Button
+                onClick={scrollToBottom}
+                className="absolute bottom-4 right-4 rounded-full h-10 w-10 p-0 shadow-lg bg-gradient-to-br from-background via-background/95 to-background/90 border border-border/50 hover:border-primary/30 hover:scale-105 transition-all duration-200 animate-in slide-in-from-bottom-2"
+                variant="outline"
+              >
+                <ArrowUp className="h-4 w-4" />
+              </Button>
+            )}
+          </div>
+
+          {/* Input Area */}
+          {currentSession && (
+            <div className="border-t bg-card/50 p-4 chat-input">
+              <form onSubmit={handleSubmit} className="relative">
+                <div className="flex gap-3">
+                  <div className="flex-1 relative">
+                    <Input
+                      ref={inputRef}
+                      value={input}
+                      onChange={handleInputChange}
+                      placeholder={selectedTask ? `Chat about "${selectedTask.title}"...` : "Type # to select a task or chat naturally..."}
+                      disabled={isLoading}
+                      className="pr-12 py-6 text-base rounded-2xl border-border/50 focus:border-primary/50 bg-background chat-focusable"
+                    />
+                    
+                    {/* Task Dropdown */}
+                    {showTaskDropdown && (
+                      <div className="absolute bottom-full mb-2 w-full bg-popover border border-border rounded-lg shadow-lg z-50 max-h-48 overflow-y-auto">
+                        {filteredTasks.length > 0 ? (
+                          <div className="p-2">
+                            <p className="text-xs font-medium text-muted-foreground mb-2 px-2">Select a task:</p>
+                            {filteredTasks.map((task) => (
+                              <button
+                                key={task.id}
+                                onClick={() => handleTaskSelect(task)}
+                                className="w-full text-left p-2 hover:bg-muted rounded-md flex items-center gap-2"
+                              >
+                                {task.is_completed ? (
+                                  <CheckCircle2 className="h-4 w-4 text-green-500 flex-shrink-0" />
+                                ) : (
+                                  <div className="w-4 h-4 rounded-full border-2 border-muted-foreground/30 flex-shrink-0" />
+                                )}
+                                <span className="text-sm truncate">{task.title}</span>
+                              </button>
+                            ))}
+                          </div>
+                        ) : (
+                          <div className="p-4 text-center text-muted-foreground text-sm">
+                            No tasks found
+                          </div>
+                        )}
                       </div>
                     )}
                   </div>
-                </div>
-              ) : (
-                <div className="space-y-4">
-                  {messages.map((message) => (
-                    <div key={message.id}>
-                      {message.role === 'system' ? (
-                        <div className="text-center py-2">
-                          <Badge variant="outline" className="text-xs">
-                            {message.content}
-                          </Badge>
-                        </div>
-                      ) : (
-                        <div
-                          className={cn(
-                            "flex gap-2 sm:gap-3",
-                            message.role === 'user' ? 'justify-end' : 'justify-start'
-                          )}
-                        >
-                          {message.role === 'assistant' && (
-                            <div className="flex-shrink-0 h-7 w-7 sm:h-8 sm:w-8 rounded-full bg-primary/10 flex items-center justify-center">
-                              <Bot className="h-3.5 w-3.5 sm:h-4 sm:w-4 text-primary" />
-                            </div>
-                          )}
-                          <div
-                            className={cn(
-                              "max-w-[85%] sm:max-w-[80%] rounded-lg px-3 py-2 sm:px-4",
-                              message.role === 'user'
-                                ? 'bg-primary text-primary-foreground'
-                                : 'bg-muted text-foreground'
-                            )}
-                          >
-                            <p className="text-sm whitespace-pre-wrap">{message.content}</p>
-                            
-                            {/* Task List Buttons */}
-                            {message.metadata?.type === 'task_list' && message.metadata.tasks && (
-                              <div className="mt-3 space-y-2">
-                                {message.metadata.tasks.map((task) => (
-                                  <Button
-                                    key={task.id}
-                                    variant="outline"
-                                    size="sm"
-                                    onClick={() => handleTaskClick(task)}
-                                    className="w-full justify-start text-left h-auto py-2 px-3"
-                                  >
-                                    <div className="flex items-center gap-2 w-full">
-                                      {task.is_completed && (
-                                        <CheckCircle2 className="h-4 w-4 text-green-500 flex-shrink-0" />
-                                      )}
-                                      <span className="truncate">{task.title}</span>
-                                    </div>
-                                  </Button>
-                                ))}
-                              </div>
-                            )}
-
-                            {/* Confirmation Buttons */}
-                            {message.metadata?.type === 'pending_confirmation' && message.metadata.pending_update && (
-                              <div className="mt-3 space-y-2 p-2 sm:p-3 bg-primary/5 rounded-md border border-primary/20">
-                                <div className="text-xs text-muted-foreground space-y-1">
-                                  <p className="break-words"><strong>{t('task')}:</strong> {message.metadata.pending_update.old_value}</p>
-                                  <p className="break-words"><strong>{t('newDescription')}:</strong> {message.metadata.pending_update.new_value}</p>
-                                </div>
-                                <div className="flex flex-col sm:flex-row gap-2 mt-2">
-                                  <Button
-                                    size="sm"
-                                    onClick={() => {
-                                      if (message.metadata?.pending_update) {
-                                        onConfirmUpdate(message.id, message.metadata.pending_update);
-                                      }
-                                    }}
-                                    className="flex-1 bg-green-600 hover:bg-green-700 text-xs sm:text-sm"
-                                  >
-                                    <CheckCircle2 className="h-3 w-3 sm:h-4 sm:w-4 mr-1" />
-                                    {t('yesConfirm')}
-                                  </Button>
-                                  <Button
-                                    size="sm"
-                                    variant="outline"
-                                    onClick={onRejectUpdate}
-                                    className="flex-1 text-xs sm:text-sm"
-                                  >
-                                    <X className="h-3 w-3 sm:h-4 sm:w-4 mr-1" />
-                                    {t('no')}
-                                  </Button>
-                                </div>
-                              </div>
-                            )}
-                          </div>
-                          {message.role === 'user' && (
-                            <div className="flex-shrink-0 h-7 w-7 sm:h-8 sm:w-8 rounded-full bg-secondary flex items-center justify-center">
-                              <User className="h-3.5 w-3.5 sm:h-4 sm:w-4 text-secondary-foreground" />
-                            </div>
-                          )}
-                        </div>
-                      )}
-                    </div>
-                  ))}
-                  {isLoading && (
-                    <div className="flex gap-3">
-                      <div className="flex-shrink-0 h-8 w-8 rounded-full bg-primary/10 flex items-center justify-center">
-                        <Bot className="h-4 w-4 text-primary" />
-                      </div>
-                      <div className="bg-muted rounded-lg px-4 py-2">
-                        <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
-                      </div>
-                    </div>
-                  )}
-                </div>
-              )}
-            </ScrollArea>
-
-            {/* Input */}
-            {currentSession && (
-              <form onSubmit={handleSubmit} className="p-2 sm:p-4 border-t relative">
-                {/* Task Dropdown */}
-                {showTaskDropdown && filteredTasks.length > 0 && (
-                  <div className="absolute bottom-full left-2 right-2 sm:left-4 sm:right-4 mb-2 bg-popover border rounded-lg shadow-lg max-h-[180px] sm:max-h-[200px] overflow-y-auto z-50">
-                    <div className="p-1.5 sm:p-2 space-y-1">
-                      {filteredTasks.map((task) => (
-                        <button
-                          key={task.id}
-                          type="button"
-                          onClick={() => handleTaskSelect(task)}
-                          className="w-full text-left px-3 py-2 rounded hover:bg-accent transition-colors flex items-center gap-2"
-                        >
-                          {task.is_completed && (
-                            <CheckCircle2 className="h-4 w-4 text-green-500 flex-shrink-0" />
-                          )}
-                          <span className="text-sm truncate">{task.title}</span>
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-                )}
-
-                {/* Command Suggestions */}
-                {selectedTask && !input && messages.length > 0 && (
-                  <div className="mb-2 sm:mb-3 flex flex-wrap gap-1.5 sm:gap-2">
-                    <Button
-                      type="button"
-                      variant="secondary"
-                      size="sm"
-                      onClick={() => setInput('finalizar')}
-                      className="h-7 text-xs gap-1 px-2 sm:px-3"
-                    >
-                      <CheckCircle2 className="h-3 w-3" />
-                      <span className="hidden xs:inline">{t('finalize')}</span>
-                    </Button>
-                    <Button
-                      type="button"
-                      variant="secondary"
-                      size="sm"
-                      onClick={() => setInput(t('step3Cmd1'))}
-                      className="h-7 text-xs gap-1 px-2 sm:px-3"
-                    >
-                      <Bot className="h-3 w-3" />
-                      <span className="hidden xs:inline">{t('improve')}</span>
-                    </Button>
-                    <Button
-                      type="button"
-                      variant="secondary"
-                      size="sm"
-                      onClick={() => setInput('mudar o título para: ')}
-                      className="h-7 text-xs gap-1 px-2 sm:px-3"
-                    >
-                      <Pencil className="h-3 w-3" />
-                      <span className="hidden xs:inline">{t('changeTitle')}</span>
-                    </Button>
-                    <Button
-                      type="button"
-                      variant="secondary"
-                      size="sm"
-                      onClick={() => setInput('deletar essa task')}
-                      className="h-7 text-xs gap-1 text-destructive px-2 sm:px-3"
-                    >
-                      <Trash2 className="h-3 w-3" />
-                      <span className="hidden xs:inline">{t('delete')}</span>
-                    </Button>
-                  </div>
-                )}
-
-                <div className="flex gap-1.5 sm:gap-2">
-                  <Input
-                    ref={inputRef}
-                    value={input}
-                    onChange={handleInputChange}
-                    placeholder={selectedTask ? t('typeCommand') : t('typeHashToSelect')}
-                    disabled={isLoading}
-                    className="flex-1 text-sm"
-                  />
-                  <Button type="submit" disabled={!input.trim() || isLoading} size="icon" className="flex-shrink-0">
-                    <Send className="h-4 w-4" />
+                  
+                  <Button
+                    type="submit"
+                    disabled={!input.trim() || isLoading}
+                    className="rounded-2xl px-6 bg-gradient-to-r from-primary via-primary/90 to-primary/80 hover:from-primary/90 hover:via-primary/80 hover:to-primary/70 hover:scale-105 transition-all duration-200 shadow-md hover:shadow-lg chat-button-hover chat-focusable"
+                  >
+                    {isLoading ? (
+                      <Loader2 className="h-4 w-4 animate-spin" />
+                    ) : (
+                      <Send className="h-4 w-4" />
+                    )}
                   </Button>
                 </div>
+                
+                <div className="flex items-center justify-between mt-2">
+                  <p className="text-xs text-muted-foreground">
+                    Press Enter to send • Type # to select tasks
+                  </p>
+                  {selectedTask && (
+                    <Badge variant="secondary" className="text-xs">
+                      {selectedTask.title}
+                    </Badge>
+                  )}
+                </div>
               </form>
-            )}
-          </TabsContent>
+            </div>
+          )}
+        </TabsContent>
 
-          <TabsContent value="history" className="m-0">
-            <ScrollArea className="h-[300px] sm:h-[400px] md:h-[500px]">
+        <TabsContent value="history" className="flex-1 m-0">
+          <div className="p-4 h-full">
+            <ScrollArea className="h-full">
               {sessions.length === 0 ? (
                 <div className="flex flex-col items-center justify-center h-full text-center py-8">
-                  <History className="h-12 w-12 text-muted-foreground/40 mb-3" />
-                  <p className="text-muted-foreground text-sm">
-                    {t('noConversationsYet')}
-                  </p>
+                  <Clock className="h-12 w-12 text-muted-foreground/40 mb-3" />
+                  <p className="text-muted-foreground text-sm">No conversations yet.</p>
                 </div>
               ) : (
-                <div className="p-2 space-y-1">
+                <div className="space-y-3">
+                  <p className="text-sm font-medium mb-4">Recent conversations</p>
                   {sessions.map((session) => (
-                    <div
+                    <Card
                       key={session.id}
                       className={cn(
-                        "flex items-center justify-between p-3 rounded-lg cursor-pointer transition-colors",
+                        "p-4 cursor-pointer transition-all hover:shadow-md border",
                         currentSession?.id === session.id
-                          ? 'bg-primary/10 border border-primary/20'
-                          : 'hover:bg-muted'
+                          ? "ring-2 ring-primary/20 border-primary/50"
+                          : "hover:border-border"
                       )}
-                      onClick={() => {
-                        onSelectSession(session);
-                        setActiveTab('chat');
-                      }}
+                      onClick={() => onSelectSession?.(session)}
                     >
-                      <div className="flex-1 min-w-0">
-                        <p className="text-sm font-medium truncate">{session.title}</p>
-                        <p className="text-xs text-muted-foreground">
-                          {formatDate(session.updated_at)}
-                        </p>
+                      <div className="flex items-start justify-between">
+                        <div className="flex-1 min-w-0">
+                          <h3 className="font-medium text-sm truncate">{session.title}</h3>
+                          <p className="text-xs text-muted-foreground">
+                            {session.message_count || 0} messages
+                          </p>
+                          {session.last_message_at && (
+                            <p className="text-xs text-muted-foreground mt-1">
+                              {formatDate(session.last_message_at)}
+                            </p>
+                          )}
+                        </div>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            onDeleteSession?.(session.id);
+                          }}
+                          className="h-8 w-8 p-0 text-muted-foreground hover:text-destructive"
+                        >
+                          <Trash2 className="h-4 w-4" />
+                        </Button>
                       </div>
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          onDeleteSession(session.id);
-                        }}
-                        className="text-muted-foreground hover:text-destructive h-8 w-8 p-0"
-                      >
-                        <Trash2 className="h-4 w-4" />
-                      </Button>
-                    </div>
+                    </Card>
                   ))}
                 </div>
               )}
             </ScrollArea>
-          </TabsContent>
-        </Tabs>
-      </div>
-    </div>
+          </div>
+        </TabsContent>
+      </Tabs>
+    </Card>
   );
 }

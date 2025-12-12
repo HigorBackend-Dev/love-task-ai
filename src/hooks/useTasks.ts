@@ -31,8 +31,8 @@ export function useTasks() {
     } catch (error) {
       console.error('Error fetching tasks:', error);
       toast({
-        title: 'Erro ao carregar tarefas',
-        description: 'Verifique sua conexão com o Supabase.',
+        title: 'Error loading tasks',
+        description: 'Check your connection to Supabase.',
         variant: 'destructive',
       });
     } finally {
@@ -43,8 +43,8 @@ export function useTasks() {
   const createTask = async (title: string): Promise<Task | null> => {
     if (!user) {
       toast({
-        title: 'Erro ao criar tarefa',
-        description: 'Você precisa estar autenticado.',
+        title: 'Error creating task',
+        description: 'You need to be authenticated.',
         variant: 'destructive',
       });
       return null;
@@ -77,8 +77,8 @@ export function useTasks() {
     } catch (error) {
       console.error('Error creating task:', error);
       toast({
-        title: 'Erro ao criar tarefa',
-        description: 'Tente novamente.',
+        title: 'Error creating task',
+        description: 'Try again.',
         variant: 'destructive',
       });
       return null;
@@ -95,7 +95,7 @@ export function useTasks() {
       console.log('Calling Edge Function with:', { taskId, title });
       
       const response = await supabase.functions.invoke('enhance-task', {
-        body: { taskId, title },
+        body: { taskId, title, mode: 'enhance' },
       });
 
       console.log('Raw Edge Function response:', response);
@@ -104,7 +104,12 @@ export function useTasks() {
 
       if (error) {
         console.error('Edge Function error:', error);
-        throw error;
+        const errorMsg = error instanceof Error ? error.message : JSON.stringify(error);
+        throw new Error(`Edge Function failed: ${errorMsg}`);
+      }
+
+      if (!data) {
+        throw new Error('No response data from Edge Function');
       }
 
       console.log('Enhanced task data:', data);
@@ -132,8 +137,8 @@ export function useTasks() {
         );
         
         toast({
-          title: 'Tarefa melhorada!',
-          description: 'O título foi aprimorado pela IA.',
+          title: 'Task improved!',
+          description: 'The title was enhanced by AI.',
         });
       } else {
         // If no enhanced title in response, fetch from database
@@ -166,20 +171,92 @@ export function useTasks() {
           );
           
           toast({
-            title: 'Tarefa melhorada!',
-            description: 'O título foi aprimorado pela IA.',
+            title: 'Task improved!',
+            description: 'The title was enhanced by AI.',
           });
         }
       }
     } catch (error) {
       console.error('Error enhancing task:', error);
+      const errorMsg = error instanceof Error ? error.message : String(error);
+      
       setTasks(prev =>
         prev.map(t => t.id === taskId ? { ...t, status: 'error' as const } : t)
       );
       
       toast({
-        title: 'Erro ao melhorar tarefa',
-        description: 'Não foi possível processar com a IA.',
+        title: 'Error enhancing task',
+        description: `AI processing failed: ${errorMsg}. Make sure N8N webhook is configured.`,
+        variant: 'destructive',
+      });
+    }
+  };
+
+  // Suggest an edit via AI without applying it to the DB
+  const suggestEdit = async (taskId: string, prompt: string): Promise<string | null> => {
+    try {
+      // Find current task title
+      const task = tasks.find(t => t.id === taskId);
+      const currentTitle = task ? task.title : '';
+
+      console.log('Calling suggest Edge Function with:', { taskId, title: currentTitle, prompt });
+      
+      const response = await supabase.functions.invoke('enhance-task', {
+        body: { taskId, title: currentTitle, user_prompt: prompt, mode: 'suggest' },
+      });
+
+      console.log('Suggest response:', response);
+      
+      const { data, error } = response;
+      if (error) {
+        console.error('Edge Function error (suggest):', error);
+        const errorMsg = error instanceof Error ? error.message : JSON.stringify(error);
+        throw new Error(`Edge Function error: ${errorMsg}`);
+      }
+
+      if (!data) {
+        throw new Error('No data returned from Edge Function');
+      }
+
+      if (data && data.enhanced_title) {
+        return data.enhanced_title as string;
+      }
+      
+      console.warn('No enhanced_title in response:', data);
+      return null;
+    } catch (error) {
+      const errorMsg = error instanceof Error ? error.message : String(error);
+      console.error('Error suggesting edit:', errorMsg);
+      toast({
+        title: 'AI Suggestion Error',
+        description: `Could not get suggestion: ${errorMsg}`,
+        variant: 'destructive',
+      });
+      return null;
+    }
+  };
+
+  // Apply a suggested title (user confirmed)
+  const applySuggestedTitle = async (taskId: string, suggestedTitle: string) => {
+    try {
+      const { error } = await supabase
+        .from('tasks')
+        .update({ title: suggestedTitle, enhanced_title: suggestedTitle, status: 'enhanced' })
+        .eq('id', taskId);
+
+      if (error) throw error;
+
+      setTasks(prev => prev.map(t => t.id === taskId ? { ...t, title: suggestedTitle, enhanced_title: suggestedTitle, status: 'enhanced' as const } : t));
+
+      toast({
+        title: 'Suggestion applied',
+        description: 'The task title was updated.',
+      });
+    } catch (error) {
+      console.error('Error applying suggested title:', error);
+      toast({
+        title: 'Error',
+        description: 'Could not apply the suggestion.',
         variant: 'destructive',
       });
     }
@@ -204,13 +281,13 @@ export function useTasks() {
       enhanceTask(taskId, title);
 
       toast({
-        title: 'Tarefa atualizada',
-        description: 'A IA está melhorando o título...',
+        title: 'Task updated',
+        description: 'AI is improving the title...',
       });
     } catch (error) {
       console.error('Error updating task:', error);
       toast({
-        title: 'Erro ao atualizar',
+        title: 'Error updating task',
         variant: 'destructive',
       });
     }
@@ -236,7 +313,7 @@ export function useTasks() {
     } catch (error) {
       console.error('Error toggling task:', error);
       toast({
-        title: 'Erro ao atualizar',
+        title: 'Error toggling task',
         variant: 'destructive',
       });
     }
@@ -254,12 +331,12 @@ export function useTasks() {
       setTasks(prev => prev.filter(t => t.id !== taskId));
       
       toast({
-        title: 'Tarefa removida',
+        title: 'Task removed',
       });
     } catch (error) {
       console.error('Error deleting task:', error);
       toast({
-        title: 'Erro ao remover',
+        title: 'Error deleting task',
         variant: 'destructive',
       });
     }
@@ -296,16 +373,16 @@ export function useTasks() {
           const oldTask = payload.old as Task;
           if (oldTask && updatedTask.title !== oldTask.title) {
             toast({
-              title: 'Tarefa atualizada!',
-              description: `Título alterado para: ${updatedTask.title}`,
+              title: 'Task updated!',
+              description: `Title changed to: ${updatedTask.title}`,
             });
           }
           
           // Show notification if enhanced_title was updated
           if (updatedTask.enhanced_title && updatedTask.status === 'enhanced') {
             toast({
-              title: 'Tarefa melhorada!',
-              description: 'O título foi aprimorado pela IA.',
+              title: 'Task improved!',
+              description: 'The title was enhanced by AI.',
             });
           }
         }
@@ -325,5 +402,7 @@ export function useTasks() {
     toggleComplete,
     deleteTask,
     refetch: fetchTasks,
+    suggestEdit,
+    applySuggestedTitle,
   };
 }

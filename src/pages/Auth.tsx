@@ -60,16 +60,16 @@ export default function Auth() {
       
       if (error) {
         if (error.message.includes('Invalid login credentials')) {
-          setError('Email ou senha incorretos');
+          setError('Incorrect email or password');
         } else {
           setError(error.message);
         }
       } else {
-        setSuccess('Login realizado com sucesso!');
+        setSuccess('Login successful!');
         navigate('/dashboard');
       }
     } catch (err) {
-      setError('Erro ao fazer login. Tente novamente.');
+      setError('Error logging in. Please try again.');
     } finally {
       setLoading(false);
     }
@@ -82,17 +82,17 @@ export default function Auth() {
 
     // Validation
     if (!validateEmail(email)) {
-      setError('Por favor, insira um email válido');
+      setError('Please enter a valid email');
       return;
     }
 
     if (!validatePassword(password)) {
-      setError('A senha deve ter pelo menos 6 caracteres');
+      setError('Password must have at least 6 characters');
       return;
     }
 
     if (password !== confirmPassword) {
-      setError('As senhas não coincidem');
+      setError('Passwords do not match');
       return;
     }
 
@@ -103,18 +103,21 @@ export default function Auth() {
       
       if (error) {
         if (error.message.includes('already registered')) {
-          setError('Este email já está cadastrado');
+          setError('This email is already registered');
         } else {
           setError(error.message);
         }
       } else {
-        setSuccess('Conta criada com sucesso! Redirecionando...');
+        // Save email for confirmation page
+        localStorage.setItem('pendingConfirmationEmail', email);
+        setSuccess('Account created! Please check your email to confirm.');
+        // Redirect to email confirmation page
         setTimeout(() => {
-          navigate('/dashboard');
-        }, 1500);
+          navigate('/confirm-email');
+        }, 2000);
       }
     } catch (err) {
-      setError('Erro ao criar conta. Tente novamente.');
+      setError('Error creating account. Please try again.');
     } finally {
       setLoading(false);
     }
@@ -141,14 +144,14 @@ export default function Auth() {
             Love Task AI
           </CardTitle>
           <CardDescription className="text-center">
-            Gerencie suas tarefas com inteligência artificial
+            Manage your tasks with artificial intelligence
           </CardDescription>
         </CardHeader>
         <CardContent>
           <Tabs value={activeTab} onValueChange={handleTabChange} className="w-full">
             <TabsList className="grid w-full grid-cols-2">
               <TabsTrigger value="login">Login</TabsTrigger>
-              <TabsTrigger value="signup">Criar Conta</TabsTrigger>
+              <TabsTrigger value="signup">Create Account</TabsTrigger>
             </TabsList>
 
             <TabsContent value="login">
@@ -171,7 +174,7 @@ export default function Auth() {
                 </div>
 
                 <div className="space-y-2">
-                  <Label htmlFor="login-password">Senha</Label>
+                  <Label htmlFor="login-password">Password</Label>
                   <div className="relative">
                     <Lock className="absolute left-3 top-3 h-4 w-4 text-gray-400" />
                     <Input
@@ -206,10 +209,10 @@ export default function Auth() {
                   {loading ? (
                     <>
                       <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                      Entrando...
+                      Signing in...
                     </>
                   ) : (
-                    'Entrar'
+                    'Sign In'
                   )}
                 </Button>
               </form>
@@ -224,7 +227,7 @@ export default function Auth() {
                     <Input
                       id="signup-email"
                       type="email"
-                      placeholder="seu@email.com"
+                      placeholder="your@email.com"
                       value={email}
                       onChange={(e) => setEmail(e.target.value)}
                       className="pl-10"
@@ -235,7 +238,7 @@ export default function Auth() {
                 </div>
 
                 <div className="space-y-2">
-                  <Label htmlFor="signup-password">Senha</Label>
+                  <Label htmlFor="signup-password">Password</Label>
                   <div className="relative">
                     <Lock className="absolute left-3 top-3 h-4 w-4 text-gray-400" />
                     <Input
@@ -250,11 +253,11 @@ export default function Auth() {
                       minLength={6}
                     />
                   </div>
-                  <p className="text-xs text-gray-500">Mínimo de 6 caracteres</p>
+                  <p className="text-xs text-gray-500">Minimum 6 characters</p>
                 </div>
 
                 <div className="space-y-2">
-                  <Label htmlFor="signup-confirm-password">Confirmar Senha</Label>
+                  <Label htmlFor="signup-confirm-password">Confirm Password</Label>
                   <div className="relative">
                     <Lock className="absolute left-3 top-3 h-4 w-4 text-gray-400" />
                     <Input
@@ -289,10 +292,10 @@ export default function Auth() {
                   {loading ? (
                     <>
                       <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                      Criando conta...
+                      Creating account...
                     </>
                   ) : (
-                    'Criar Conta'
+                    'Create Account'
                   )}
                 </Button>
               </form>
@@ -301,7 +304,7 @@ export default function Auth() {
         </CardContent>
         <CardFooter className="flex justify-center">
           <p className="text-xs text-gray-500 text-center">
-            Ao criar uma conta, você concorda com nossos termos de serviço e política de privacidade.
+            By creating an account, you agree to our terms of service and privacy policy.
           </p>
         </CardFooter>
       </Card>
