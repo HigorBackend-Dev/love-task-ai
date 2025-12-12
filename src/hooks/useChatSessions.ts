@@ -311,50 +311,24 @@ export function useChatSessions() {
         })),
       };
 
-      const webhookUrl = import.meta.env.VITE_N8N_CHATBOT_WEBHOOK_URL;
-      
-      console.log('Chatbot webhook URL:', webhookUrl);
-      console.log('Sending to N8N:', context);
-      
-      if (!webhookUrl) {
-        throw new Error('N8N Chatbot webhook URL not configured');
-      }
+      console.log('Sending to chatbot via Edge Function:', context);
 
-      const response = await fetch(webhookUrl, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify(context),
+      const response = await supabase.functions.invoke('chatbot-proxy', {
+        body: context,
       });
 
-      console.log('N8N response status:', response.status);
+      console.log('Edge Function response:', response);
 
-      if (!response.ok) {
-        const errorText = await response.text();
-        console.error('N8N error response:', errorText);
-        throw new Error(`N8N webhook failed: ${response.status} - ${errorText}`);
+      if (response.error) {
+        console.error('Edge Function error:', response.error);
+        throw new Error(response.error.message || 'Failed to call chatbot');
       }
 
-      const responseText = await response.text();
-      console.log('N8N raw response:', responseText);
+      const data = response.data;
+      console.log('Chatbot response data:', data);
 
-      let data;
-      let aiResponse;
-
-      try {
-        // Try to parse as JSON
-        data = JSON.parse(responseText);
-        console.log('N8N Chat response (JSON):', data);
-        
-        // Process AI response from JSON
-        aiResponse = data.response || data.output || data.message || 'Sem resposta do assistente.';
-      } catch (e) {
-        // If not JSON, use text directly
-        console.log('N8N returned plain text, using it directly');
-        aiResponse = responseText || 'Sem resposta do assistente.';
-        data = { response: aiResponse };
-      }
+      // Process AI response
+      const aiResponse = data?.response || data?.output || data?.message || 'Sem resposta do assistente.';
 
       // Check if AI wants to update the task with confirmation
       if (data.action === 'update_task' && data.updates && selectedTask) {

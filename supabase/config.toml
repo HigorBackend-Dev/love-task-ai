@@ -44,3 +44,6 @@ verify_jwt = false
 
 [functions.chatbot]
 verify_jwt = false
+
+[functions.chatbot-proxy]
+verify_jwt = false
