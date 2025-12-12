@@ -2,11 +2,14 @@ import { Header } from '@/components/Header';
 import { TaskForm } from '@/components/TaskForm';
 import { TaskList } from '@/components/TaskList';
 import { ChatPanel } from '@/components/ChatPanel';
+import { OnboardingTour } from '@/components/OnboardingTour';
 import { useTasks } from '@/hooks/useTasks';
 import { useChatSessions } from '@/hooks/useChatSessions';
+import { useOnboarding } from '@/hooks/useOnboarding';
 
 const Index = () => {
   const { tasks, isLoading, createTask, updateTask, toggleComplete, deleteTask, refetch } = useTasks();
+  const { updateChecklistItem } = useOnboarding();
   const {
     sessions,
     currentSession,
@@ -25,10 +28,14 @@ const Index = () => {
 
   const handleCreateTask = async (title: string) => {
     await createTask(title);
+    // Marcar que usuário criou uma tarefa
+    updateChecklistItem('created_task');
   };
 
   const handleSendMessage = async (message: string) => {
     await sendMessage(message, tasks);
+    // Marcar que usuário iniciou chat
+    updateChecklistItem('started_chat');
     // Refresh tasks after AI might have updated them
     await refetch();
   };
@@ -37,16 +44,16 @@ const Index = () => {
     <div className="min-h-screen bg-background">
       <Header />
       
-      <main className="container mx-auto px-4 py-8">
+      <main className="container mx-auto px-4 py-8" data-onboarding="dashboard">
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
           {/* Task List Section */}
           <div className="lg:col-span-2 space-y-6">
-            <div className="bg-card p-6 rounded-lg border">
+            <div className="bg-card p-6 rounded-lg border" data-onboarding="task-form">
               <h2 className="text-lg font-semibold text-foreground mb-4">Nova Tarefa</h2>
               <TaskForm onSubmit={handleCreateTask} />
             </div>
             
-            <div className="bg-card p-6 rounded-lg border">
+            <div className="bg-card p-6 rounded-lg border" data-onboarding="task-list">
               <h2 className="text-lg font-semibold text-foreground mb-4">Suas Tarefas</h2>
               <TaskList
                 tasks={tasks}
@@ -60,7 +67,7 @@ const Index = () => {
           
           {/* Chat Panel Section */}
           <div className="lg:col-span-1">
-            <div className="sticky top-8 h-[calc(100vh-8rem)]">
+            <div className="sticky top-8 h-[calc(100vh-8rem)]" data-onboarding="chat-panel">
               <ChatPanel
                 sessions={sessions}
                 currentSession={currentSession}
@@ -85,6 +92,9 @@ const Index = () => {
           </div>
         </div>
       </main>
+
+      {/* Onboarding Tour */}
+      <OnboardingTour />
     </div>
   );
 };

@@ -10,6 +10,7 @@ interface AuthContextType {
   signUp: (email: string, password: string) => Promise<{ error: AuthError | null }>;
   signIn: (email: string, password: string) => Promise<{ error: AuthError | null }>;
   signOut: () => Promise<void>;
+  updateProfile: (data: { full_name?: string; email?: string; avatar_url?: string }) => void;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -105,6 +106,22 @@ export const AuthProvider = ({ children }: AuthProviderProps) => {
     }
   };
 
+  const updateProfile = (data: { full_name?: string; email?: string; avatar_url?: string }) => {
+    if (!user) return;
+    
+    // Atualizar o estado local do usuário
+    const updatedUser = {
+      ...user,
+      user_metadata: {
+        ...user.user_metadata,
+        ...data,
+      },
+      email: data.email || user.email,
+    };
+    
+    setUser(updatedUser);
+  };
+
   const value = {
     user,
     session,
@@ -112,6 +129,7 @@ export const AuthProvider = ({ children }: AuthProviderProps) => {
     signUp,
     signIn,
     signOut,
+    updateProfile,
   };
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
