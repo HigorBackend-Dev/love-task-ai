@@ -3,14 +3,32 @@ import { TaskForm } from '@/components/TaskForm';
 import { TaskList } from '@/components/TaskList';
 import { ChatPanel } from '@/components/ChatPanel';
 import { useTasks } from '@/hooks/useTasks';
-import { useChatbot } from '@/hooks/useChatbot';
+import { useChatSessions } from '@/hooks/useChatSessions';
 
 const Index = () => {
-  const { tasks, isLoading, createTask, updateTask, toggleComplete, deleteTask } = useTasks();
-  const { messages, isLoading: chatLoading, sendMessage, clearMessages } = useChatbot();
+  const { tasks, isLoading, createTask, updateTask, toggleComplete, deleteTask, refetch } = useTasks();
+  const {
+    sessions,
+    currentSession,
+    messages,
+    isLoading: chatLoading,
+    selectedTask,
+    createSession,
+    selectSession,
+    deleteSession,
+    sendMessage,
+    selectTaskForChat,
+    clearTaskSelection,
+  } = useChatSessions();
 
   const handleCreateTask = async (title: string) => {
     await createTask(title);
+  };
+
+  const handleSendMessage = async (message: string) => {
+    await sendMessage(message, tasks);
+    // Refresh tasks after AI might have updated them
+    await refetch();
   };
 
   return (
@@ -42,10 +60,18 @@ const Index = () => {
           <div className="lg:col-span-1">
             <div className="sticky top-8 h-[calc(100vh-8rem)]">
               <ChatPanel
+                sessions={sessions}
+                currentSession={currentSession}
                 messages={messages}
                 isLoading={chatLoading}
-                onSendMessage={sendMessage}
-                onClear={clearMessages}
+                selectedTask={selectedTask}
+                tasks={tasks}
+                onSendMessage={handleSendMessage}
+                onCreateSession={createSession}
+                onSelectSession={selectSession}
+                onDeleteSession={deleteSession}
+                onSelectTask={selectTaskForChat}
+                onClearTaskSelection={clearTaskSelection}
               />
             </div>
           </div>

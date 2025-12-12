@@ -7,9 +7,23 @@ export interface Task {
   created_at: string;
 }
 
+export interface ChatSession {
+  id: string;
+  title: string;
+  selected_task_id: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
 export interface ChatMessage {
   id: string;
-  role: 'user' | 'assistant';
+  session_id: string;
+  role: 'user' | 'assistant' | 'system';
   content: string;
-  timestamp: Date;
+  metadata?: {
+    type?: 'task_list' | 'task_selected' | 'task_updated';
+    tasks?: Task[];
+    selected_task?: Task;
+  };
+  created_at: string;
 }
