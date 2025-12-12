@@ -3,6 +3,7 @@ import { supabase } from '@/integrations/supabase/client';
 import { ChatSession, ChatMessage, Task } from '@/types/task';
 import { useToast } from '@/hooks/use-toast';
 import { Json } from '@/integrations/supabase/types';
+import { useAuth } from '@/contexts/AuthContext';
 
 interface PendingUpdate {
   task_id: string;
@@ -18,12 +19,20 @@ export function useChatSessions() {
   const [isLoading, setIsLoading] = useState(false);
   const [selectedTask, setSelectedTask] = useState<Task | null>(null);
   const { toast } = useToast();
+  const { user } = useAuth();
 
   // Fetch all sessions
   const fetchSessions = useCallback(async () => {
+    if (!user) {
+      setSessions([]);
+      return;
+    }
+
+    // @ts-expect-error - user_id, message_count, last_message_at not in generated types yet
     const { data, error } = await supabase
       .from('chat_sessions')
       .select('*')
+      .eq('user_id', user.id)
       .order('updated_at', { ascending: false });
 
     if (error) {
@@ -31,11 +40,13 @@ export function useChatSessions() {
       return;
     }
 
-    setSessions((data || []).map(s => ({
+    setSessions((data || []).map((s: Record<string, unknown>) => ({
       ...s,
-      title: s.title || 'Nova Conversa'
-    })) as ChatSession[]);
-  }, []);
+      title: s.title || 'Nova Conversa',
+      message_count: s.message_count || 0,
+      last_message_at: s.last_message_at || null
+    } as ChatSession)));
+  }, [user]);
 
   // Fetch messages for current session
   const fetchMessages = useCallback(async (sessionId: string) => {
@@ -59,9 +70,18 @@ export function useChatSessions() {
 
   // Create new session
   const createSession = useCallback(async () => {
+    if (!user) {
+      toast({
+        title: 'Erro ao criar sessão',
+        description: 'Você precisa estar autenticado.',
+        variant: 'destructive',
+      });
+      return null;
+    }
+
     const { data, error } = await supabase
       .from('chat_sessions')
-      .insert({ title: 'Nova Conversa' })
+      .insert({ title: 'Nova Conversa', user_id: user.id })
       .select()
       .single();
 
@@ -76,14 +96,19 @@ export function useChatSessions() {
 
     const session: ChatSession = {
       ...data,
-      title: data.title || 'Nova Conversa'
+      user_id: user.id,
+      title: data.title || 'Nova Conversa',
+      // @ts-expect-error - message_count not in generated types yet
+      message_count: data.message_count || 0,
+      // @ts-expect-error - last_message_at not in generated types yet
+      last_message_at: data.last_message_at || null
     };
     setSessions(prev => [session, ...prev]);
     setCurrentSession(session);
     setMessages([]);
     setSelectedTask(null);
     return session;
-  }, [toast]);
+  }, [toast, user]);
 
   // Select a session
   const selectSession = useCallback(async (session: ChatSession) => {
@@ -201,8 +226,13 @@ export function useChatSessions() {
 
     const lowerContent = content.toLowerCase().trim();
 
+    // Ignore very short responses (like "sim", "não", "ok")
+    if (lowerContent.length <= 3) {
+      return false;
+    }
+
     // Command: Finalizar/Completar task
-    if (lowerContent.match(/^(finalizar|completar|concluir|marcar como (finalizada|concluída|completa))/)) {
+    if (lowerContent.match(/^(finalizar|completar|concluir|marcar como (finalizada|concluída|completa))(\s|$)/)) {
       await supabase
         .from('tasks')
         .update({ is_completed: true })
@@ -219,7 +249,7 @@ export function useChatSessions() {
     }
 
     // Command: Reabrir task
-    if (lowerContent.match(/^(reabrir|desmarcar|marcar como pendente|voltar)/)) {
+    if (lowerContent.match(/^(reabrir|desmarcar|marcar como pendente|voltar)(\s|$)/)) {
       await supabase
         .from('tasks')
         .update({ is_completed: false })
@@ -231,7 +261,7 @@ export function useChatSessions() {
     }
 
     // Command: Deletar task
-    if (lowerContent.match(/^(deletar|excluir|remover|apagar) (essa |esta |a )?task/)) {
+    if (lowerContent.match(/^(deletar|excluir|remover|apagar)\s+(essa|esta|a)?\s*task/)) {
       await supabase
         .from('tasks')
         .delete()
@@ -250,7 +280,7 @@ export function useChatSessions() {
     }
 
     // Command: Mudar título direto (sem IA)
-    const titleMatch = content.match(/^mudar (o )?t[íi]tulo para:?\s*(.+)$/i);
+    const titleMatch = content.match(/^mudar\s+(o\s+)?t[íi]tulo\s+para:?\s*(.+)$/i);
     if (titleMatch) {
       const newTitle = titleMatch[2].trim();
       
@@ -304,11 +334,8 @@ export function useChatSessions() {
           status: selectedTask.status,
         } : null,
         sessionId: session.id,
-        allTasks: tasks.map(t => ({
-          id: t.id,
-          title: t.title,
-          is_completed: t.is_completed,
-        })),
+        hasTaskSelected: !!selectedTask,
+        conversationContext: `Usuário está ${selectedTask ? 'conversando sobre a tarefa: "' + selectedTask.title + '"' : 'em uma conversa geral sem tarefa selecionada'}`,
       };
 
       console.log('Sending to chatbot via Edge Function:', context);
@@ -334,17 +361,22 @@ export function useChatSessions() {
       if (data.action === 'update_task' && data.updates && selectedTask) {
         // If requires_confirmation, store pending update
         if (data.requires_confirmation) {
+          const firstUpdateField = Object.keys(data.updates)[0];
+          const oldValue = firstUpdateField === 'title' 
+            ? selectedTask.title 
+            : String((selectedTask as unknown as Record<string, unknown>)[firstUpdateField] || '');
+          
           await addMessage('assistant', aiResponse, {
             type: 'pending_confirmation',
             pending_update: {
               task_id: selectedTask.id,
-              field: Object.keys(data.updates)[0],
-              new_value: Object.values(data.updates)[0] as string,
-              old_value: selectedTask.title,
+              field: firstUpdateField,
+              new_value: String(Object.values(data.updates)[0]),
+              old_value: String(oldValue),
             },
           });
         } else {
-          // Auto-apply update without confirmation
+          // Auto-apply update without confirmation (usuário já confirmou)
           const { error: updateError } = await supabase
             .from('tasks')
             .update(data.updates)
@@ -364,10 +396,13 @@ export function useChatSessions() {
             
             await addMessage('assistant', aiResponse);
             
+            const updateField = Object.keys(data.updates)[0];
             toast({
               title: 'Tarefa atualizada!',
-              description: 'As alterações foram aplicadas.',
+              description: `${updateField === 'title' ? 'Título' : updateField} atualizado com sucesso.`,
             });
+          } else {
+            await addMessage('assistant', '❌ Erro ao atualizar a tarefa. Tente novamente.');
           }
         }
       } else if (data.action === 'complete_task' && selectedTask) {
@@ -379,6 +414,11 @@ export function useChatSessions() {
 
         setSelectedTask(prev => prev ? { ...prev, is_completed: true } : null);
         await addMessage('assistant', aiResponse);
+        
+        toast({
+          title: 'Tarefa finalizada!',
+          description: selectedTask.title,
+        });
       } else {
         // No action, just add response
         await addMessage('assistant', aiResponse);

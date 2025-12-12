@@ -1,3 +1,13 @@
+export interface Profile {
+  id: string;
+  email: string;
+  full_name: string | null;
+  avatar_url: string | null;
+  preferences: Record<string, unknown>;
+  created_at: string;
+  updated_at: string;
+}
+
 export interface Task {
   id: string;
   title: string;
@@ -5,6 +15,7 @@ export interface Task {
   is_completed: boolean;
   status: 'pending' | 'enhancing' | 'enhanced' | 'error';
   created_at: string;
+  user_id: string;
 }
 
 export interface ChatSession {
@@ -13,6 +24,9 @@ export interface ChatSession {
   selected_task_id: string | null;
   created_at: string;
   updated_at: string;
+  user_id: string;
+  message_count: number;
+  last_message_at: string | null;
 }
 
 export interface ChatMessage {

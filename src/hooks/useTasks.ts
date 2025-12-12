@@ -2,21 +2,32 @@ import { useState, useEffect, useCallback } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { Task } from '@/types/task';
 import { useToast } from '@/hooks/use-toast';
+import { useAuth } from '@/contexts/AuthContext';
 
 export function useTasks() {
   const [tasks, setTasks] = useState<Task[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const { toast } = useToast();
+  const { user } = useAuth();
 
   const fetchTasks = useCallback(async () => {
+    if (!user) {
+      setTasks([]);
+      setIsLoading(false);
+      return;
+    }
+
     try {
+      // @ts-expect-error - Supabase type inference can be complex with RLS
       const { data, error } = await supabase
         .from('tasks')
         .select('*')
-        .order('created_at', { ascending: false });
+        .eq('user_id', user.id)
+        .order('created_at', { ascending: false })
+        .returns<Task[]>();
 
       if (error) throw error;
-      setTasks((data || []) as Task[]);
+      setTasks(data || []);
     } catch (error) {
       console.error('Error fetching tasks:', error);
       toast({
@@ -27,15 +38,25 @@ export function useTasks() {
     } finally {
       setIsLoading(false);
     }
-  }, [toast]);
+  }, [toast, user]);
 
   const createTask = async (title: string): Promise<Task | null> => {
+    if (!user) {
+      toast({
+        title: 'Erro ao criar tarefa',
+        description: 'Você precisa estar autenticado.',
+        variant: 'destructive',
+      });
+      return null;
+    }
+
     try {
       const newTask = {
         title,
         enhanced_title: null,
         is_completed: false,
         status: 'pending' as const,
+        user_id: user.id,
       };
 
       const { data, error } = await supabase
