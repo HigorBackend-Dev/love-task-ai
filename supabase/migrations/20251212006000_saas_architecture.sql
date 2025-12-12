@@ -325,13 +325,14 @@ SELECT
   p.id as user_id,
   p.email,
   COUNT(DISTINCT t.id) as total_tasks,
-  COUNT(DISTINCT t.id) FILTER (WHERE t.is_completed = true) as completed_tasks,
+  COUNT(DISTINCT t.id) FILTER (WHERE t.status = 'completed') as completed_tasks,
   COUNT(DISTINCT cs.id) as total_chat_sessions,
-  COALESCE(SUM(cs.message_count), 0) as total_messages,
+  COUNT(DISTINCT cm.id) as total_messages,
   p.created_at as user_since
 FROM public.profiles p
 LEFT JOIN public.tasks t ON t.user_id = p.id
 LEFT JOIN public.chat_sessions cs ON cs.user_id = p.id
+LEFT JOIN public.chat_messages cm ON cm.session_id = cs.id
 GROUP BY p.id, p.email, p.created_at;
 
 -- RLS para view
@@ -352,15 +353,15 @@ DECLARE
 BEGIN
   -- Deletar tasks antigas completadas
   DELETE FROM public.tasks
-  WHERE is_completed = true
+  WHERE status = 'completed'
     AND created_at < NOW() - (days_to_keep || ' days')::INTERVAL;
   
   GET DIAGNOSTICS tasks_deleted = ROW_COUNT;
   
   -- Deletar sessões antigas sem mensagens recentes
   DELETE FROM public.chat_sessions
-  WHERE last_message_at < NOW() - (days_to_keep || ' days')::INTERVAL
-    OR (last_message_at IS NULL AND created_at < NOW() - (days_to_keep || ' days')::INTERVAL);
+  WHERE updated_at < NOW() - (days_to_keep || ' days')::INTERVAL
+    OR (updated_at IS NULL AND created_at < NOW() - (days_to_keep || ' days')::INTERVAL);
   
   GET DIAGNOSTICS sessions_deleted = ROW_COUNT;
   

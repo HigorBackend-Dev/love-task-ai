@@ -1,5 +1,5 @@
 -- Create chat_sessions table for conversation history
-CREATE TABLE public.chat_sessions (
+CREATE TABLE IF NOT EXISTS public.chat_sessions (
   id UUID NOT NULL DEFAULT gen_random_uuid() PRIMARY KEY,
   title TEXT DEFAULT 'Nova Conversa',
   selected_task_id UUID REFERENCES public.tasks(id) ON DELETE SET NULL,
@@ -8,7 +8,7 @@ CREATE TABLE public.chat_sessions (
 );
 
 -- Create chat_messages table for individual messages
-CREATE TABLE public.chat_messages (
+CREATE TABLE IF NOT EXISTS public.chat_messages (
   id UUID NOT NULL DEFAULT gen_random_uuid() PRIMARY KEY,
   session_id UUID NOT NULL REFERENCES public.chat_sessions(id) ON DELETE CASCADE,
   role TEXT NOT NULL CHECK (role IN ('user', 'assistant', 'system')),
@@ -26,8 +26,8 @@ CREATE POLICY "Allow all on chat_sessions" ON public.chat_sessions FOR ALL USING
 CREATE POLICY "Allow all on chat_messages" ON public.chat_messages FOR ALL USING (true) WITH CHECK (true);
 
 -- Create indexes for performance
-CREATE INDEX idx_chat_messages_session_id ON public.chat_messages(session_id);
-CREATE INDEX idx_chat_sessions_updated_at ON public.chat_sessions(updated_at DESC);
+CREATE INDEX IF NOT EXISTS idx_chat_messages_session_id ON public.chat_messages(session_id);
+CREATE INDEX IF NOT EXISTS idx_chat_sessions_updated_at ON public.chat_sessions(updated_at DESC);
 
 -- Create function to update updated_at timestamp
 CREATE OR REPLACE FUNCTION public.update_updated_at_column()
