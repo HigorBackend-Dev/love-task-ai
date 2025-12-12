@@ -108,13 +108,11 @@ export default function Auth() {
           setError(error.message);
         }
       } else {
-        // Save email for confirmation page
-        localStorage.setItem('pendingConfirmationEmail', email);
-        setSuccess('Account created! Please check your email to confirm.');
-        // Redirect to email confirmation page
+        setSuccess('Account created successfully!');
+        // Redirect to dashboard
         setTimeout(() => {
-          navigate('/confirm-email');
-        }, 2000);
+          navigate('/dashboard');
+        }, 1500);
       }
     } catch (err) {
       setError('Error creating account. Please try again.');
