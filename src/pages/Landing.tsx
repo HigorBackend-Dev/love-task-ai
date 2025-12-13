@@ -204,11 +204,7 @@ export default function Landing() {
             <p className="font-medium text-foreground">Love Task AI</p>
           </div>
           <p className="text-muted-foreground mb-2">Task management system with artificial intelligence</p>
-          <p className="text-sm text-muted-foreground flex items-center justify-center gap-1">
-            Developed with 
-            <span className="text-red-500 animate-pulse">❤️</span> 
-            using React, Supabase and AI
-          </p>
+          <p className="text-sm text-muted-foreground">© {new Date().getFullYear()} Love Task AI. All rights reserved.</p>
         </div>
       </footer>
     </div>
