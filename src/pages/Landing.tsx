@@ -52,7 +52,7 @@ export default function Landing() {
             variant="outline"
             className="border-primary/30 bg-background/80 backdrop-blur-sm hover:bg-primary/5 hover:border-primary/50 transition-all duration-200 hover:scale-105 landing-focusable"
           >
-            Entrar / Cadastrar
+            Sign In / Sign Up
           </Button>
         </div>
       </header>
