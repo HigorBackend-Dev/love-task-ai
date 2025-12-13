@@ -1,18 +1,13 @@
 import { Header } from '@/components/Header';
 import { TaskForm } from '@/components/TaskForm';
 import { TaskList } from '@/components/TaskList';
-import { OnboardingTour } from '@/components/OnboardingTour';
 import { useTasks } from '@/hooks/useTasks';
 // Chat removed from index page
-import { useOnboarding } from '@/hooks/useOnboarding';
 
 const Index = () => {
   const { tasks, isLoading, createTask, updateTask, toggleComplete, deleteTask, refetch } = useTasks();
-  const { updateChecklistItem } = useOnboarding();
   const handleCreateTask = async (title: string) => {
     await createTask(title);
-    // Marcar que usuário criou uma tarefa
-    updateChecklistItem('created_task');
   };
 
   return (
@@ -43,9 +38,6 @@ const Index = () => {
           {/* Chat removed from index page */}
         </div>
       </main>
-
-      {/* Onboarding Tour */}
-      <OnboardingTour />
     </div>
   );
 };

@@ -3,6 +3,7 @@ import { supabase } from '@/integrations/supabase/client';
 import { Task } from '@/types/task';
 import { useToast } from '@/hooks/use-toast';
 import { useAuth } from '@/contexts/AuthContext';
+import { getErrorMessage } from '@/lib/error-messages';
 
 export function useTasks() {
   const [tasks, setTasks] = useState<Task[]>([]);
@@ -18,7 +19,6 @@ export function useTasks() {
     }
 
     try {
-
       const { data, error } = await supabase
         .from('tasks')
         .select('*')
@@ -30,9 +30,10 @@ export function useTasks() {
       setTasks(data || []);
     } catch (error) {
       console.error('Error fetching tasks:', error);
+      const errorMessage = getErrorMessage(error);
       toast({
-        title: 'Error loading tasks',
-        description: 'Check your connection to Supabase.',
+        title: 'Failed to Load Tasks',
+        description: errorMessage,
         variant: 'destructive',
       });
     } finally {
@@ -43,8 +44,17 @@ export function useTasks() {
   const createTask = async (title: string): Promise<Task | null> => {
     if (!user) {
       toast({
-        title: 'Error creating task',
-        description: 'You need to be authenticated.',
+        title: 'Authentication Required',
+        description: 'You need to be logged in to create tasks.',
+        variant: 'destructive',
+      });
+      return null;
+    }
+
+    if (!title.trim()) {
+      toast({
+        title: 'Validation Error',
+        description: 'Task title cannot be empty.',
         variant: 'destructive',
       });
       return null;
@@ -52,7 +62,7 @@ export function useTasks() {
 
     try {
       const newTask = {
-        title,
+        title: title.trim(),
         enhanced_title: null,
         is_completed: false,
         status: 'pending' as const,
@@ -70,15 +80,21 @@ export function useTasks() {
       const taskData = data as Task;
       setTasks(prev => [taskData, ...prev]);
       
+      toast({
+        title: 'Task Created',
+        description: 'Your task has been created successfully.',
+      });
+      
       // Trigger enhancement
-      enhanceTask(taskData.id, title);
+      enhanceTask(taskData.id, title.trim());
       
       return taskData;
     } catch (error) {
       console.error('Error creating task:', error);
+      const errorMessage = getErrorMessage(error);
       toast({
-        title: 'Error creating task',
-        description: 'Try again.',
+        title: 'Failed to Create Task',
+        description: errorMessage,
         variant: 'destructive',
       });
       return null;
@@ -137,8 +153,8 @@ export function useTasks() {
         );
         
         toast({
-          title: 'Task improved!',
-          description: 'The title was enhanced by AI.',
+          title: 'Task Improved',
+          description: 'Your task title was enhanced with AI suggestions.',
         });
       } else {
         // If no enhanced title in response, fetch from database
@@ -171,22 +187,22 @@ export function useTasks() {
           );
           
           toast({
-            title: 'Task improved!',
-            description: 'The title was enhanced by AI.',
+            title: 'Task Improved',
+            description: 'Your task title was enhanced with AI suggestions.',
           });
         }
       }
     } catch (error) {
       console.error('Error enhancing task:', error);
-      const errorMsg = error instanceof Error ? error.message : String(error);
+      const errorMessage = getErrorMessage(error);
       
       setTasks(prev =>
         prev.map(t => t.id === taskId ? { ...t, status: 'error' as const } : t)
       );
       
       toast({
-        title: 'Error enhancing task',
-        description: `AI processing failed: ${errorMsg}. Make sure N8N webhook is configured.`,
+        title: 'AI Enhancement Failed',
+        description: errorMessage || 'Could not enhance task. The AI service may be unavailable. Please try again later.',
         variant: 'destructive',
       });
     }
@@ -194,6 +210,15 @@ export function useTasks() {
 
   // Suggest an edit via AI without applying it to the DB
   const suggestEdit = async (taskId: string, prompt: string): Promise<string | null> => {
+    if (!prompt.trim()) {
+      toast({
+        title: 'Validation Error',
+        description: 'Please provide instructions for the AI suggestion.',
+        variant: 'destructive',
+      });
+      return null;
+    }
+
     try {
       // Find current task title
       const task = tasks.find(t => t.id === taskId);
@@ -223,13 +248,13 @@ export function useTasks() {
       }
       
       console.warn('No enhanced_title in response:', data);
-      return null;
+      throw new Error('No suggestion was generated. Please try again.');
     } catch (error) {
-      const errorMsg = error instanceof Error ? error.message : String(error);
-      console.error('Error suggesting edit:', errorMsg);
+      const errorMessage = getErrorMessage(error);
+      console.error('Error suggesting edit:', error);
       toast({
-        title: 'AI Suggestion Error',
-        description: `Could not get suggestion: ${errorMsg}`,
+        title: 'AI Suggestion Failed',
+        description: errorMessage || 'Could not generate a suggestion. Please try again later.',
         variant: 'destructive',
       });
       return null;
@@ -238,6 +263,15 @@ export function useTasks() {
 
   // Apply a suggested title (user confirmed)
   const applySuggestedTitle = async (taskId: string, suggestedTitle: string) => {
+    if (!suggestedTitle.trim()) {
+      toast({
+        title: 'Validation Error',
+        description: 'Task title cannot be empty.',
+        variant: 'destructive',
+      });
+      return;
+    }
+
     try {
       const { error } = await supabase
         .from('tasks')
@@ -249,45 +283,57 @@ export function useTasks() {
       setTasks(prev => prev.map(t => t.id === taskId ? { ...t, title: suggestedTitle, enhanced_title: suggestedTitle, status: 'enhanced' as const } : t));
 
       toast({
-        title: 'Suggestion applied',
-        description: 'The task title was updated.',
+        title: 'Task Updated',
+        description: 'The AI suggestion has been applied to your task.',
       });
     } catch (error) {
       console.error('Error applying suggested title:', error);
+      const errorMessage = getErrorMessage(error);
       toast({
-        title: 'Error',
-        description: 'Could not apply the suggestion.',
+        title: 'Failed to Apply Suggestion',
+        description: errorMessage || 'Could not update the task. Please try again.',
         variant: 'destructive',
       });
     }
   };
 
   const updateTask = async (taskId: string, title: string) => {
+    if (!title.trim()) {
+      toast({
+        title: 'Validation Error',
+        description: 'Task title cannot be empty.',
+        variant: 'destructive',
+      });
+      return;
+    }
+
     try {
       const { error } = await supabase
         .from('tasks')
-        .update({ title, enhanced_title: null, status: 'pending' })
+        .update({ title: title.trim(), enhanced_title: null, status: 'pending' })
         .eq('id', taskId);
 
       if (error) throw error;
 
       setTasks(prev =>
         prev.map(t =>
-          t.id === taskId ? { ...t, title, enhanced_title: null, status: 'pending' as const } : t
+          t.id === taskId ? { ...t, title: title.trim(), enhanced_title: null, status: 'pending' as const } : t
         )
       );
 
       // Re-enhance the task
-      enhanceTask(taskId, title);
+      enhanceTask(taskId, title.trim());
 
       toast({
-        title: 'Task updated',
-        description: 'AI is improving the title...',
+        title: 'Task Updated',
+        description: 'AI is improving the new title...',
       });
     } catch (error) {
       console.error('Error updating task:', error);
+      const errorMessage = getErrorMessage(error);
       toast({
-        title: 'Error updating task',
+        title: 'Failed to Update Task',
+        description: errorMessage || 'Could not update the task. Please try again.',
         variant: 'destructive',
       });
     }
@@ -295,7 +341,14 @@ export function useTasks() {
 
   const toggleComplete = async (taskId: string) => {
     const task = tasks.find(t => t.id === taskId);
-    if (!task) return;
+    if (!task) {
+      toast({
+        title: 'Error',
+        description: 'Task not found.',
+        variant: 'destructive',
+      });
+      return;
+    }
 
     try {
       const { error } = await supabase
@@ -310,10 +363,18 @@ export function useTasks() {
           t.id === taskId ? { ...t, is_completed: !t.is_completed } : t
         )
       );
+
+      const message = !task.is_completed ? 'Task marked as complete.' : 'Task marked as incomplete.';
+      toast({
+        title: 'Status Updated',
+        description: message,
+      });
     } catch (error) {
       console.error('Error toggling task:', error);
+      const errorMessage = getErrorMessage(error);
       toast({
-        title: 'Error toggling task',
+        title: 'Failed to Update Task Status',
+        description: errorMessage || 'Could not update the task. Please try again.',
         variant: 'destructive',
       });
     }
@@ -331,12 +392,15 @@ export function useTasks() {
       setTasks(prev => prev.filter(t => t.id !== taskId));
       
       toast({
-        title: 'Task removed',
+        title: 'Task Deleted',
+        description: 'The task has been permanently removed.',
       });
     } catch (error) {
       console.error('Error deleting task:', error);
+      const errorMessage = getErrorMessage(error);
       toast({
-        title: 'Error deleting task',
+        title: 'Failed to Delete Task',
+        description: errorMessage || 'Could not delete the task. Please try again.',
         variant: 'destructive',
       });
     }

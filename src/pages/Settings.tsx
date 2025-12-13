@@ -1,12 +1,14 @@
 import { useState } from 'react';
-import { Camera, Save, User, Mail, ArrowLeft } from 'lucide-react';
+import { Camera, Save, User, Mail, ArrowLeft, AlertCircle } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
+import { Alert, AlertDescription } from '@/components/ui/alert';
 import { useToast } from '@/hooks/use-toast';
 import { useAuth } from '@/contexts/AuthContext';
+import { getErrorMessage } from '@/lib/error-messages';
 import { supabase } from '@/integrations/supabase/client';
 import { useNavigate } from 'react-router-dom';
 
@@ -17,6 +19,8 @@ export default function Settings() {
   const navigate = useNavigate();
   const [isLoading, setIsLoading] = useState(false);
   const [isUploadingAvatar, setIsUploadingAvatar] = useState(false);
+  const [formError, setFormError] = useState<string | null>(null);
+  const [passwordError, setPasswordError] = useState<string | null>(null);
 
   const [formData, setFormData] = useState({
     fullName: user?.user_metadata?.full_name || '',
@@ -30,11 +34,31 @@ export default function Settings() {
 
   const handleInputChange = (field: string, value: string) => {
     setFormData(prev => ({ ...prev, [field]: value }));
+    setFormError(null);
   };
 
   const handleAvatarUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
     if (!file || !user) return;
+
+    // Validate file
+    if (!file.type.startsWith('image/')) {
+      toast({
+        title: 'Invalid File',
+        description: 'Please select an image file (JPG, PNG, etc).',
+        variant: 'destructive',
+      });
+      return;
+    }
+
+    if (file.size > 5 * 1024 * 1024) { // 5MB
+      toast({
+        title: 'File Too Large',
+        description: 'Image must be smaller than 5MB.',
+        variant: 'destructive',
+      });
+      return;
+    }
 
     setIsUploadingAvatar(true);
 
@@ -87,15 +111,16 @@ export default function Settings() {
       }
 
       toast({
-        title: '✅ Photo updated!',
-        description: 'Your profile photo was changed successfully.',
+        title: 'Photo Updated',
+        description: 'Your profile photo has been changed successfully.',
       });
 
     } catch (error) {
       console.error('Error uploading avatar:', error);
+      const errorMessage = getErrorMessage(error);
       toast({
-        title: 'Upload error',
-        description: 'Could not update profile photo.',
+        title: 'Upload Failed',
+        description: errorMessage || 'Could not update profile photo. Please try again.',
         variant: 'destructive',
       });
     } finally {
@@ -106,6 +131,25 @@ export default function Settings() {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!user) return;
+
+    // Validate form
+    setFormError(null);
+
+    if (!formData.fullName.trim()) {
+      setFormError('Full name cannot be empty.');
+      return;
+    }
+
+    if (!formData.email.trim()) {
+      setFormError('Email cannot be empty.');
+      return;
+    }
+
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!emailRegex.test(formData.email)) {
+      setFormError('Please enter a valid email address.');
+      return;
+    }
 
     setIsLoading(true);
 
@@ -119,8 +163,8 @@ export default function Settings() {
         if (emailError) throw emailError;
 
         toast({
-          title: '📧 Confirm new email',
-          description: 'We sent a confirmation link to your new email.',
+          title: 'Confirm New Email',
+          description: 'We sent a confirmation link to your new email. Please check your inbox.',
         });
       }
 
@@ -152,17 +196,14 @@ export default function Settings() {
       });
 
       toast({
-        title: '✅ Profile updated!',
-        description: 'Your information was saved successfully.',
+        title: 'Profile Updated',
+        description: 'Your profile information has been saved successfully.',
       });
 
     } catch (error) {
       console.error('Error updating profile:', error);
-      toast({
-        title: 'Error saving',
-        description: 'Could not update profile. Try again.',
-        variant: 'destructive',
-      });
+      const errorMessage = getErrorMessage(error);
+      setFormError(errorMessage || 'Could not update profile. Please try again.');
     } finally {
       setIsLoading(false);
     }
@@ -172,12 +213,27 @@ export default function Settings() {
   const handleChangePassword = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!user) return;
-    if (!newPassword) {
-      toast({ title: 'Password required', description: 'Enter a new password.', variant: 'destructive' });
+
+    // Validate passwords
+    setPasswordError(null);
+
+    if (!newPassword.trim()) {
+      setPasswordError('Please enter a new password.');
       return;
     }
+
+    if (newPassword.length < 6) {
+      setPasswordError('Password must be at least 6 characters long.');
+      return;
+    }
+
+    if (!confirmPassword.trim()) {
+      setPasswordError('Please confirm your password.');
+      return;
+    }
+
     if (newPassword !== confirmPassword) {
-      toast({ title: 'Mismatch', description: 'Passwords do not match.', variant: 'destructive' });
+      setPasswordError('Passwords do not match. Please try again.');
       return;
     }
 
@@ -186,12 +242,17 @@ export default function Settings() {
       const { error } = await supabase.auth.updateUser({ password: newPassword });
       if (error) throw error;
 
-      toast({ title: 'Password updated', description: 'Your password was changed successfully.' });
+      toast({ 
+        title: 'Password Changed', 
+        description: 'Your password has been updated successfully.' 
+      });
       setNewPassword('');
       setConfirmPassword('');
+      setPasswordError(null);
     } catch (error) {
       console.error('Error changing password:', error);
-      toast({ title: 'Error', description: 'Could not change password.', variant: 'destructive' });
+      const errorMessage = getErrorMessage(error);
+      setPasswordError(errorMessage || 'Could not change password. Please try again.');
     } finally {
       setIsChangingPassword(false);
     }
@@ -282,6 +343,13 @@ export default function Settings() {
             </CardHeader>
             <CardContent>
               <form onSubmit={handleSubmit} className="space-y-4">
+                {formError && (
+                  <Alert variant="destructive">
+                    <AlertCircle className="h-4 w-4" />
+                    <AlertDescription>{formError}</AlertDescription>
+                  </Alert>
+                )}
+
                 <div className="space-y-2">
                   <Label htmlFor="fullName">Full Name</Label>
                   <Input
@@ -289,6 +357,7 @@ export default function Settings() {
                     value={formData.fullName}
                     onChange={(e) => handleInputChange('fullName', e.target.value)}
                     placeholder="Your full name"
+                    disabled={isLoading}
                   />
                 </div>
 
@@ -300,6 +369,7 @@ export default function Settings() {
                     value={formData.email}
                     onChange={(e) => handleInputChange('email', e.target.value)}
                     placeholder="your@email.com"
+                    disabled={isLoading}
                   />
                   <p className="text-xs text-muted-foreground">
                     Changing email requires email confirmation.
@@ -336,15 +406,26 @@ export default function Settings() {
               <CardDescription>Change your password</CardDescription>
             </CardHeader>
             <CardContent>
-              <form onSubmit={handleChangePassword} className="space-y-3">
+              <form onSubmit={handleChangePassword} className="space-y-4">
+                {passwordError && (
+                  <Alert variant="destructive">
+                    <AlertCircle className="h-4 w-4" />
+                    <AlertDescription>{passwordError}</AlertDescription>
+                  </Alert>
+                )}
+
                 <div className="space-y-2">
                   <Label htmlFor="newPassword">New Password</Label>
                   <Input
                     id="newPassword"
                     type="password"
                     value={newPassword}
-                    onChange={(e) => setNewPassword(e.target.value)}
-                    placeholder="Enter new password"
+                    onChange={(e) => {
+                      setNewPassword(e.target.value);
+                      setPasswordError(null);
+                    }}
+                    placeholder="Enter new password (min. 6 characters)"
+                    disabled={isChangingPassword}
                   />
                 </div>
 
@@ -354,8 +435,12 @@ export default function Settings() {
                     id="confirmPassword"
                     type="password"
                     value={confirmPassword}
-                    onChange={(e) => setConfirmPassword(e.target.value)}
+                    onChange={(e) => {
+                      setConfirmPassword(e.target.value);
+                      setPasswordError(null);
+                    }}
                     placeholder="Confirm new password"
+                    disabled={isChangingPassword}
                   />
                 </div>
 

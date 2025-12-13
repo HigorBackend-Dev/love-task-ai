@@ -3,32 +3,77 @@ import { Header } from '@/components/Header';
 import { TaskForm } from '@/components/TaskForm';
 import { TaskList } from '@/components/TaskList';
 // Chat UI removed per user request
-import { OnboardingTour } from '@/components/OnboardingTour';
 import { useTasks } from '@/hooks/useTasks';
 // useChatSessions removed — chat disabled in UI
 import { useProfile } from '@/hooks/useProfile';
-import { useOnboarding } from '@/hooks/useOnboarding';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { LogOut, User, CheckCircle, MessageSquare, Sparkles } from 'lucide-react';
+import { Alert, AlertDescription } from '@/components/ui/alert';
+import { LogOut, User, CheckCircle, AlertTriangle } from 'lucide-react';
 import { useState } from 'react';
 
 export default function Dashboard() {
-  const { user, signOut } = useAuth();
+  const { user, signOut, error: authError, clearError } = useAuth();
   const { profile } = useProfile();
-  const { updateChecklistItem } = useOnboarding();
   const { tasks, isLoading, createTask, updateTask, toggleComplete, deleteTask, refetch } = useTasks();
+  const [signOutError, setSignOutError] = useState<string | null>(null);
+
   const handleCreateTask = async (title: string) => {
     await createTask(title);
-    updateChecklistItem('created_task', true);
+  };
+
+  const handleSignOut = async () => {
+    try {
+      setSignOutError(null);
+      await signOut();
+    } catch (error) {
+      const errorMsg = error instanceof Error ? error.message : 'Failed to sign out. Please try again.';
+      setSignOutError(errorMsg);
+    }
   };
 
   return (
     <div className="min-h-screen bg-background">
       <Header />
       
-      {/* Onboarding Tour */}
-      <OnboardingTour />
+      {/* Error Alerts */}
+      {authError && (
+        <div className="border-b border-destructive bg-destructive/5">
+          <div className="container mx-auto px-4 py-3">
+            <Alert variant="destructive">
+              <AlertTriangle className="h-4 w-4" />
+              <AlertDescription>
+                {authError}
+                <button 
+                  onClick={clearError}
+                  className="ml-2 font-semibold underline hover:no-underline"
+                >
+                  Dismiss
+                </button>
+              </AlertDescription>
+            </Alert>
+          </div>
+        </div>
+      )}
+
+      {signOutError && (
+        <div className="border-b border-destructive bg-destructive/5">
+          <div className="container mx-auto px-4 py-3">
+            <Alert variant="destructive">
+              <AlertTriangle className="h-4 w-4" />
+              <AlertDescription>
+                {signOutError}
+                <button 
+                  onClick={() => setSignOutError(null)}
+                  className="ml-2 font-semibold underline hover:no-underline"
+                >
+                  Dismiss
+                </button>
+              </AlertDescription>
+            </Alert>
+          </div>
+        </div>
+      )}
       
       {/* User Info Bar */}
       <div className="border-b bg-card">
@@ -44,7 +89,7 @@ export default function Dashboard() {
               <div className="hidden sm:flex items-center gap-4 text-xs text-muted-foreground">
                 <div className="flex items-center gap-1">
                   <CheckCircle className="h-3 w-3" />
-                  <span>{tasks.filter(t => t.is_completed).length} concluídas</span>
+                  <span>{tasks.filter(t => t.is_completed).length} completed</span>
                 </div>
                 {/* chat removed */}
               </div>
@@ -54,7 +99,7 @@ export default function Dashboard() {
               <Button
                 variant="outline"
                 size="sm"
-                onClick={signOut}
+                onClick={handleSignOut}
                 className="gap-2"
               >
                 <LogOut className="h-4 w-4" />

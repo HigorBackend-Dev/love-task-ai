@@ -2,15 +2,18 @@ import { createContext, useContext, useEffect, useState, ReactNode } from 'react
 import { User, Session, AuthError } from '@supabase/supabase-js';
 import { supabase } from '@/integrations/supabase/client';
 import { useNavigate } from 'react-router-dom';
+import { getErrorMessage } from '@/lib/error-messages';
 
 interface AuthContextType {
   user: User | null;
   session: Session | null;
   loading: boolean;
-  signUp: (email: string, password: string) => Promise<{ error: AuthError | null }>;
-  signIn: (email: string, password: string) => Promise<{ error: AuthError | null }>;
+  error: string | null;
+  signUp: (email: string, password: string) => Promise<{ error: AuthError | null; message?: string }>;
+  signIn: (email: string, password: string) => Promise<{ error: AuthError | null; message?: string }>;
   signOut: () => Promise<void>;
   updateProfile: (data: { full_name?: string; email?: string; avatar_url?: string }) => void;
+  clearError: () => void;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -31,6 +34,7 @@ export const AuthProvider = ({ children }: AuthProviderProps) => {
   const [user, setUser] = useState<User | null>(null);
   const [session, setSession] = useState<Session | null>(null);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
   const navigate = useNavigate();
 
   useEffect(() => {
@@ -55,7 +59,16 @@ export const AuthProvider = ({ children }: AuthProviderProps) => {
 
   const signUp = async (email: string, password: string) => {
     try {
-      const { data, error } = await supabase.auth.signUp({
+      setError(null);
+
+      // Validation
+      if (!email || !password) {
+        const errorMsg = !email ? 'Email is required' : 'Password is required';
+        setError(getErrorMessage(errorMsg));
+        return { error: null, message: errorMsg };
+      }
+
+      const { data, error: authError } = await supabase.auth.signUp({
         email,
         password,
         options: {
@@ -63,8 +76,12 @@ export const AuthProvider = ({ children }: AuthProviderProps) => {
         },
       });
 
-      if (error) return { error };
-      
+      if (authError) {
+        const errorMessage = getErrorMessage(authError.message);
+        setError(errorMessage);
+        return { error: authError, message: errorMessage };
+      }
+
       // If email confirmation is disabled, user is immediately logged in
       if (data.user && data.session) {
         setUser(data.user);
@@ -72,44 +89,64 @@ export const AuthProvider = ({ children }: AuthProviderProps) => {
       }
 
       return { error: null };
-    } catch (error) {
-      return { error: error as AuthError };
+    } catch (err) {
+      const errorMessage = getErrorMessage(err);
+      setError(errorMessage);
+      return { error: err as AuthError, message: errorMessage };
     }
   };
 
   const signIn = async (email: string, password: string) => {
     try {
-      const { data, error } = await supabase.auth.signInWithPassword({
+      setError(null);
+
+      // Validation
+      if (!email || !password) {
+        const errorMsg = !email ? 'Email is required' : 'Password is required';
+        setError(getErrorMessage(errorMsg));
+        return { error: null, message: errorMsg };
+      }
+
+      const { data, error: authError } = await supabase.auth.signInWithPassword({
         email,
         password,
       });
 
-      if (error) return { error };
+      if (authError) {
+        const errorMessage = getErrorMessage(authError.message);
+        setError(errorMessage);
+        return { error: authError, message: errorMessage };
+      }
 
       setUser(data.user);
       setSession(data.session);
 
       return { error: null };
-    } catch (error) {
-      return { error: error as AuthError };
+    } catch (err) {
+      const errorMessage = getErrorMessage(err);
+      setError(errorMessage);
+      return { error: err as AuthError, message: errorMessage };
     }
   };
 
   const signOut = async () => {
     try {
+      setError(null);
       await supabase.auth.signOut();
       setUser(null);
       setSession(null);
       navigate('/auth');
-    } catch (error) {
-      console.error('Error signing out:', error);
+    } catch (err) {
+      const errorMessage = getErrorMessage(err);
+      setError(errorMessage);
+      console.error('Error signing out:', err);
     }
   };
 
   const updateProfile = (data: { full_name?: string; email?: string; avatar_url?: string }) => {
     if (!user) return;
     
-    // Atualizar o estado local do usuário
+    // Update local user state
     const updatedUser = {
       ...user,
       user_metadata: {
@@ -122,14 +159,20 @@ export const AuthProvider = ({ children }: AuthProviderProps) => {
     setUser(updatedUser);
   };
 
+  const clearError = () => {
+    setError(null);
+  };
+
   const value = {
     user,
     session,
     loading,
+    error,
     signUp,
     signIn,
     signOut,
     updateProfile,
+    clearError,
   };
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

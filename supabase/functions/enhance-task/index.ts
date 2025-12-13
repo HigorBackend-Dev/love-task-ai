@@ -8,17 +8,14 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
 
-// Mock enhancement function for development when N8N is not configured
+// Mock enhancement function
 function generateMockEnhancement(title: string, userPrompt?: string): string {
-  // Simple mock that capitalizes and adds context
   const enhanced = title.trim();
   
   if (userPrompt && userPrompt.trim()) {
-    // If user provided a prompt, incorporate it
     return `${enhanced} - ${userPrompt.trim()}`;
   }
   
-  // Add a generic improvement suggestion
   const improvements = [
     'Clarify and refine',
     'Improve and optimize',
@@ -31,206 +28,188 @@ function generateMockEnhancement(title: string, userPrompt?: string): string {
   return `${enhanced} (${improvement})`;
 }
 
+// Timeout helper
+function timeout(ms: number): Promise<never> {
+  return new Promise((_, reject) => 
+    setTimeout(() => reject(new Error(`Timeout after ${ms}ms`)), ms)
+  );
+}
+
 serve(async (req) => {
-  // Handle CORS preflight requests
+  // Handle CORS
   if (req.method === 'OPTIONS') {
     return new Response(null, { headers: corsHeaders });
   }
 
+  let taskId = '';
+  let title = '';
+  
   try {
-    const { taskId, title, user_prompt, mode } = await req.json();
+    // Parse request
+    const body = await req.json();
+    taskId = body.taskId;
+    title = body.title;
+    const user_prompt = body.user_prompt;
+    const mode = body.mode;
     
-    console.log(`[enhance-task] Processing task ${taskId}: "${title}" (mode: ${mode || 'default'})`);
-
     if (!taskId || !title) {
+      console.error('[enhance-task] Missing taskId or title');
       return new Response(
-        JSON.stringify({ 
-          success: false, 
-          error: 'Missing required fields: taskId and title'
-        }),
-        { 
-          status: 400,
-          headers: { ...corsHeaders, 'Content-Type': 'application/json' } 
-        }
+        JSON.stringify({ success: false, error: 'Missing taskId or title' }),
+        { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
     }
 
-    // Get N8N webhook URL from environment
-    const n8nWebhookUrl = Deno.env.get('N8N_WEBHOOK_URL');
+    console.log(`[enhance-task] START - taskId: ${taskId}`);
+    console.log(`[enhance-task] Title: ${title}`);
+    console.log(`[enhance-task] Mode: ${mode}`);
     
-    // If N8N is not configured, provide a mock enhancement for development
-    if (!n8nWebhookUrl) {
-      console.warn('[enhance-task] N8N_WEBHOOK_URL not configured - using mock enhancement for development');
-      
-      // Generate a simple enhanced title by adding context
-      const enhancedTitle = generateMockEnhancement(title, user_prompt);
-      
-      return new Response(
-        JSON.stringify({ 
-          success: true, 
-          enhanced_title: enhancedTitle,
-          source: 'mock_development'
-        }),
-        { 
-          status: 200,
-          headers: { ...corsHeaders, 'Content-Type': 'application/json' } 
-        }
-      );
-    }
-
-    // Call N8N webhook
-    console.log(`[enhance-task] Calling N8N webhook at: ${n8nWebhookUrl}`);
-    let n8nResponse;
-    try {
-      n8nResponse = await fetch(n8nWebhookUrl, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          taskId,
-          title,
-          user_prompt: user_prompt || '',
-          action: mode === 'suggest' ? 'suggest_enhancement' : 'enhance_task',
-        }),
-        signal: AbortSignal.timeout(30000), // 30 second timeout
-      });
-    } catch (fetchError) {
-      const fetchErrorMsg = fetchError instanceof Error ? fetchError.message : String(fetchError);
-      console.error(`[enhance-task] Failed to fetch N8N webhook: ${fetchErrorMsg}`);
-      return new Response(
-        JSON.stringify({ 
-          success: false, 
-          error: `Failed to connect to N8N webhook: ${fetchErrorMsg}`,
-          suggestion: 'Check that N8N_WEBHOOK_URL is valid and N8N service is running'
-        }),
-        { 
-          status: 503,
-          headers: { ...corsHeaders, 'Content-Type': 'application/json' } 
-        }
-      );
-    }
-
-    if (!n8nResponse.ok) {
-      const errorText = await n8nResponse.text();
-      console.error(`[enhance-task] N8N error: ${n8nResponse.status} - ${errorText}`);
-      return new Response(
-        JSON.stringify({ 
-          success: false, 
-          error: `N8N webhook returned ${n8nResponse.status}`,
-          details: errorText.substring(0, 500) // Limit error details
-        }),
-        { 
-          status: 502,
-          headers: { ...corsHeaders, 'Content-Type': 'application/json' } 
-        }
-      );
-    }
-
-    let n8nData;
-    try {
-      n8nData = await n8nResponse.json();
-    } catch (parseError) {
-      console.error('[enhance-task] Failed to parse N8N response');
-      return new Response(
-        JSON.stringify({ 
-          success: false, 
-          error: 'N8N returned invalid JSON'
-        }),
-        { 
-          status: 502,
-          headers: { ...corsHeaders, 'Content-Type': 'application/json' } 
-        }
-      );
-    }
-
-    console.log(`[enhance-task] N8N response:`, JSON.stringify(n8nData).substring(0, 500));
-
-    // Extract enhanced title from various possible response formats
-    let enhancedTitle = title; // fallback to original
+    // Check environment variables exist
+    const supabaseUrl = Deno.env.get('SUPABASE_URL');
+    const supabaseKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
     
-    if (n8nData.enhanced_title) {
-      enhancedTitle = n8nData.enhanced_title;
-    } else if (n8nData.title) {
-      enhancedTitle = n8nData.title;
-    } else if (n8nData.output) {
-      enhancedTitle = n8nData.output;
-    } else if (n8nData.response) {
-      enhancedTitle = n8nData.response;
-    } else if (n8nData.result) {
-      enhancedTitle = n8nData.result;
-    } else if (typeof n8nData === 'string') {
-      enhancedTitle = n8nData;
+    if (!supabaseUrl || !supabaseKey) {
+      console.error('[enhance-task] Missing SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY');
+      return new Response(
+        JSON.stringify({ success: false, error: 'Server configuration error' }),
+        { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
     }
     
-    console.log(`[enhance-task] Extracted enhanced title: "${enhancedTitle}"`);
+    console.log('[enhance-task] Credentials verified');
+    
+    // Get enhancement (N8N or mock)
+    let enhancedTitle = title;
+    let usedN8N = false;
+    
+    const n8nUrl = Deno.env.get('N8N_ENHANCE_WEBHOOK_URL');
+    
+    if (n8nUrl && n8nUrl.trim().length > 0) {
+      console.log('[enhance-task] Attempting N8N...');
+      try {
+        // Race against timeout
+        const n8nPromise = fetch(n8nUrl, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            taskId,
+            title,
+            user_prompt: user_prompt || '',
+            action: mode === 'suggest' ? 'suggest_enhancement' : 'enhance_task',
+          }),
+        });
+        
+        const n8nResponse = await Promise.race([
+          n8nPromise,
+          timeout(10000) // 10 second timeout
+        ]);
 
-    // For 'suggest' mode, don't update the database yet (user will decide)
-    if (mode === 'suggest') {
-      return new Response(
-        JSON.stringify({ 
-          success: true, 
-          enhanced_title: enhancedTitle 
-        }),
-        { 
-          headers: { ...corsHeaders, 'Content-Type': 'application/json' } 
+        if (n8nResponse.ok) {
+          try {
+            const n8nData = await n8nResponse.json();
+            console.log('[enhance-task] N8N success');
+            
+            // Extract from response
+            if (n8nData.enhanced_title) {
+              enhancedTitle = n8nData.enhanced_title;
+              usedN8N = true;
+            } else if (n8nData.title) {
+              enhancedTitle = n8nData.title;
+              usedN8N = true;
+            } else if (n8nData.output) {
+              enhancedTitle = n8nData.output;
+              usedN8N = true;
+            } else if (typeof n8nData === 'string') {
+              enhancedTitle = n8nData;
+              usedN8N = true;
+            } else {
+              console.warn('[enhance-task] No recognized field in N8N response');
+              enhancedTitle = generateMockEnhancement(title, user_prompt);
+            }
+          } catch (e) {
+            console.warn('[enhance-task] Failed to parse N8N JSON');
+            enhancedTitle = generateMockEnhancement(title, user_prompt);
+          }
+        } else {
+          console.warn(`[enhance-task] N8N returned ${n8nResponse.status}`);
+          enhancedTitle = generateMockEnhancement(title, user_prompt);
         }
-      );
-    }
-
-    // Update task in Supabase
-    const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
-    const supabaseKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
-    const supabase = createClient(supabaseUrl, supabaseKey);
-
-    const { error: updateError } = await supabase
-      .from('tasks')
-      .update({ 
-        enhanced_title: enhancedTitle,
-        status: 'enhanced'
-      })
-      .eq('id', taskId);
-
-    if (updateError) {
-      console.error('[enhance-task] Supabase update error:', updateError);
-      return new Response(
-        JSON.stringify({ 
-          success: false, 
-          error: 'Database update failed',
-          details: updateError.message
-        }),
-        { 
-          status: 500,
-          headers: { ...corsHeaders, 'Content-Type': 'application/json' } 
-        }
-      );
-    }
-
-    console.log(`[enhance-task] Task ${taskId} enhanced successfully`);
-
-    return new Response(
-      JSON.stringify({ 
-        success: true, 
-        enhanced_title: enhancedTitle 
-      }),
-      { 
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' } 
+      } catch (e) {
+        const msg = e instanceof Error ? e.message : String(e);
+        console.warn(`[enhance-task] N8N error: ${msg}`);
+        enhancedTitle = generateMockEnhancement(title, user_prompt);
       }
+    } else {
+      console.log('[enhance-task] N8N not configured, using mock');
+      enhancedTitle = generateMockEnhancement(title, user_prompt);
+    }
+    
+    console.log(`[enhance-task] Enhanced title: ${enhancedTitle}`);
+    
+    // Update database
+    if (mode !== 'suggest') {
+      console.log('[enhance-task] Updating database...');
+      
+      try {
+        const supabase = createClient(supabaseUrl, supabaseKey);
+        
+        const { error, data } = await supabase
+          .from('tasks')
+          .update({
+            enhanced_title: enhancedTitle,
+            status: 'enhanced'
+          })
+          .eq('id', taskId)
+          .select();
+
+        if (error) {
+          console.error(`[enhance-task] DB error: ${error.message}`);
+          return new Response(
+            JSON.stringify({ success: false, error: 'Database update failed', details: error.message }),
+            { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+          );
+        }
+
+        if (!data || data.length === 0) {
+          console.error(`[enhance-task] Task not found: ${taskId}`);
+          return new Response(
+            JSON.stringify({ success: false, error: 'Task not found' }),
+            { status: 404, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+          );
+        }
+
+        console.log('[enhance-task] Database updated successfully');
+      } catch (e) {
+        const msg = e instanceof Error ? e.message : String(e);
+        console.error(`[enhance-task] DB exception: ${msg}`);
+        return new Response(
+          JSON.stringify({ success: false, error: 'Database error', details: msg }),
+          { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        );
+      }
+    }
+    
+    console.log('[enhance-task] SUCCESS');
+    return new Response(
+      JSON.stringify({
+        success: true,
+        enhanced_title: enhancedTitle,
+        source: usedN8N ? 'n8n' : 'mock'
+      }),
+      { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
     );
   } catch (error) {
-    console.error('[enhance-task] Unexpected error:', error);
-    
-    const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+    const msg = error instanceof Error ? error.message : String(error);
+    console.error(`[enhance-task] FATAL ERROR: ${msg}`);
+    console.error(`[enhance-task] Stack: ${error instanceof Error ? error.stack : 'no stack'}`);
     
     return new Response(
-      JSON.stringify({ 
-        success: false, 
-        error: errorMessage
+      JSON.stringify({
+        success: false,
+        error: 'Internal server error',
+        details: msg
       }),
-      { 
-        status: 500,
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' } 
-      }
+      { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
     );
   }
 });
