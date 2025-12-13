@@ -154,7 +154,7 @@ export default function Settings() {
     setIsLoading(true);
 
     try {
-      // Atualizar email se mudou
+      // Update email if changed
       if (formData.email !== user.email) {
         const { error: emailError } = await supabase.auth.updateUser({
           email: formData.email
@@ -168,7 +168,7 @@ export default function Settings() {
         });
       }
 
-      // Atualizar dados no Supabase Auth
+      // Update data in Supabase Auth
       const { error: authError } = await supabase.auth.updateUser({
         data: {
           full_name: formData.fullName
@@ -177,7 +177,7 @@ export default function Settings() {
 
       if (authError) throw authError;
 
-      // Atualizar no profiles
+      // Update in profiles
       const { error: profileError } = await supabase
         .from('profiles')
         .update({ 
@@ -188,7 +188,7 @@ export default function Settings() {
 
       if (profileError) throw profileError;
 
-      // Atualizar contexto local
+      // Update local context
       updateProfile({ 
         full_name: formData.fullName,
         email: formData.email,

@@ -34,10 +34,10 @@ export function TaskList({ tasks, isLoading, onToggle, onUpdate, onDelete }: Tas
       <div className="flex flex-col items-center justify-center py-16 text-center">
         <ClipboardList className="h-16 w-16 text-muted-foreground/40 mb-4" />
         <h3 className="text-lg font-medium text-foreground mb-1">
-          Nenhuma tarefa ainda
+          No tasks yet
         </h3>
         <p className="text-muted-foreground">
-          Crie sua primeira tarefa para começar!
+          Create your first task to get started!
         </p>
       </div>
     );

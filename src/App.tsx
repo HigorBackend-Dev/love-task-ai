@@ -6,7 +6,6 @@ import Auth from './pages/Auth';
 import Index from './pages/Index';
 import Dashboard from './pages/Dashboard';
 import Settings from './pages/Settings';
-import ConfirmEmail from './pages/ConfirmEmail';
 import NotFound from './pages/NotFound';
 
 function App() {
@@ -17,7 +16,6 @@ function App() {
           <Route path="/" element={<Landing />} />
           <Route path="/auth" element={<Auth />} />
           <Route path="/index" element={<Index />} />
-          <Route path="/confirm-email" element={<ConfirmEmail />} />
           <Route 
             path="/dashboard" 
             element={
