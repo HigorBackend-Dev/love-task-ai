@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Check, Pencil, Trash2, Loader2, Sparkles, X, Save, AlertCircle } from 'lucide-react';
+import { Check, Pencil, Trash2, Loader2, Sparkles, X, Save, AlertCircle, ChevronDown, ChevronUp } from 'lucide-react';
 import { Task } from '@/types/task';
 import { useTasks } from '@/hooks/useTasks';
 import { Button } from '@/components/ui/button';
@@ -15,10 +15,13 @@ interface TaskItemProps {
   onDelete: (id: string) => void;
 }
 
+const MAX_PREVIEW_LENGTH = 150;
+
 export function TaskItem({ task, onToggle, onUpdate, onDelete }: TaskItemProps) {
   const [isEditing, setIsEditing] = useState(false);
   const [editTitle, setEditTitle] = useState(task.title);
   const [editError, setEditError] = useState<string | null>(null);
+  const [isExpanded, setIsExpanded] = useState(false);
   // AI edit flow
   const [aiMode, setAiMode] = useState(false);
   const [promptText, setPromptText] = useState('');
@@ -28,6 +31,9 @@ export function TaskItem({ task, onToggle, onUpdate, onDelete }: TaskItemProps) 
   const [isApplying, setIsApplying] = useState(false);
   const { suggestEdit, applySuggestedTitle } = useTasks();
 
+  const displayTitle = task.status === 'enhanced' && task.enhanced_title ? task.enhanced_title : task.title;
+  const isLongText = displayTitle.length > MAX_PREVIEW_LENGTH;
+
   const handleSave = () => {
     setEditError(null);
 
@@ -36,8 +42,8 @@ export function TaskItem({ task, onToggle, onUpdate, onDelete }: TaskItemProps) 
       return;
     }
 
-    if (editTitle.trim().length > 200) {
-      setEditError('Task title must be less than 200 characters.');
+    if (editTitle.trim().length > 5000) {
+      setEditError('Task title must be less than 5000 characters.');
       return;
     }
 
@@ -165,24 +171,31 @@ export function TaskItem({ task, onToggle, onUpdate, onDelete }: TaskItemProps) 
                         <AlertDescription>{editError}</AlertDescription>
                       </Alert>
                     )}
-                    <div className="flex gap-2">
-                      <Input
+                    <div className="flex flex-col gap-2">
+                      <textarea
                         value={editTitle}
                         onChange={(e) => {
                           setEditTitle(e.target.value);
                           setEditError(null);
                         }}
-                        onKeyDown={handleKeyDown}
-                        className="flex-1"
+                        onKeyDown={(e) => {
+                          if (e.key === 'Escape') handleCancel();
+                        }}
+                        className="flex-1 rounded-md border p-2 text-sm font-medium min-h-24 w-full"
                         autoFocus
-                        maxLength={200}
+                        maxLength={5000}
+                        placeholder="Enter task details..."
                       />
-                      <Button size="icon" variant="ghost" onClick={handleSave}>
-                        <Save className="h-4 w-4" />
-                      </Button>
-                      <Button size="icon" variant="ghost" onClick={handleCancel}>
-                        <X className="h-4 w-4" />
-                      </Button>
+                      <div className="flex gap-2">
+                        <Button size="sm" onClick={handleSave}>
+                          <Save className="h-4 w-4 mr-1" />
+                          Save
+                        </Button>
+                        <Button size="sm" variant="ghost" onClick={handleCancel}>
+                          <X className="h-4 w-4 mr-1" />
+                          Cancel
+                        </Button>
+                      </div>
                     </div>
                   </>
                 )}
@@ -190,12 +203,34 @@ export function TaskItem({ task, onToggle, onUpdate, onDelete }: TaskItemProps) 
           ) : (
             <>
               <div className="flex items-start gap-2">
-                <p className={cn(
-                  "font-medium text-foreground leading-relaxed flex-1",
-                  task.is_completed && "line-through text-muted-foreground"
-                )}>
-                  {task.status === 'enhanced' && task.enhanced_title ? task.enhanced_title : task.title}
-                </p>
+                <div className="flex-1 min-w-0">
+                  <p className={cn(
+                    "font-medium text-foreground leading-relaxed whitespace-pre-wrap break-words",
+                    task.is_completed && "line-through text-muted-foreground"
+                  )}>
+                    {isExpanded ? displayTitle : (isLongText ? displayTitle.substring(0, MAX_PREVIEW_LENGTH) + '...' : displayTitle)}
+                  </p>
+                  {isLongText && (
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => setIsExpanded(!isExpanded)}
+                      className="mt-2 h-auto p-0 text-xs text-primary hover:bg-transparent"
+                    >
+                      {isExpanded ? (
+                        <>
+                          <ChevronUp className="h-3 w-3 mr-1" />
+                          Show less
+                        </>
+                      ) : (
+                        <>
+                          <ChevronDown className="h-3 w-3 mr-1" />
+                          Show more
+                        </>
+                      )}
+                    </Button>
+                  )}
+                </div>
                 {task.status === 'enhanced' && task.enhanced_title && (
                   <Sparkles className="h-4 w-4 text-primary mt-0.5 flex-shrink-0" />
                 )}

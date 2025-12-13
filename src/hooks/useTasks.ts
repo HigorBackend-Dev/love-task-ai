@@ -273,6 +273,7 @@ export function useTasks() {
     }
 
     try {
+      // Update database first
       const { error } = await supabase
         .from('tasks')
         .update({ title: suggestedTitle, enhanced_title: suggestedTitle, status: 'enhanced' })
@@ -280,7 +281,13 @@ export function useTasks() {
 
       if (error) throw error;
 
-      setTasks(prev => prev.map(t => t.id === taskId ? { ...t, title: suggestedTitle, enhanced_title: suggestedTitle, status: 'enhanced' as const } : t));
+      // Update local state immediately
+      const updatedTasks = tasks.map(t => 
+        t.id === taskId 
+          ? { ...t, title: suggestedTitle, enhanced_title: suggestedTitle, status: 'enhanced' as const } 
+          : t
+      );
+      setTasks(updatedTasks);
 
       toast({
         title: 'Task Updated',
@@ -315,11 +322,11 @@ export function useTasks() {
 
       if (error) throw error;
 
-      setTasks(prev =>
-        prev.map(t =>
-          t.id === taskId ? { ...t, title: title.trim(), enhanced_title: null, status: 'pending' as const } : t
-        )
+      // Update local state immediately before async enhancement
+      const updatedTasks = tasks.map(t =>
+        t.id === taskId ? { ...t, title: title.trim(), enhanced_title: null, status: 'pending' as const } : t
       );
+      setTasks(updatedTasks);
 
       // Re-enhance the task
       enhanceTask(taskId, title.trim());

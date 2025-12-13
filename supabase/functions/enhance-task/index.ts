@@ -16,16 +16,8 @@ function generateMockEnhancement(title: string, userPrompt?: string): string {
     return `${enhanced} - ${userPrompt.trim()}`;
   }
   
-  const improvements = [
-    'Clarify and refine',
-    'Improve and optimize',
-    'Enhance and streamline',
-    'Develop and strengthen',
-    'Expand and detail'
-  ];
-  
-  const improvement = improvements[Math.floor(Math.random() * improvements.length)];
-  return `${enhanced} (${improvement})`;
+  // For enhance mode without user prompt, just return the title as-is
+  return enhanced;
 }
 
 // Timeout helper
@@ -87,6 +79,12 @@ serve(async (req) => {
     if (n8nUrl && n8nUrl.trim().length > 0) {
       console.log('[enhance-task] Attempting N8N...');
       try {
+        // For enhance mode without user_prompt, add a default prompt to generate steps
+        let finalUserPrompt = user_prompt || '';
+        if (mode === 'enhance' && !user_prompt) {
+          finalUserPrompt = 'Provide a clear, improved version of this task with step-by-step instructions if applicable.';
+        }
+        
         // Race against timeout
         const n8nPromise = fetch(n8nUrl, {
           method: 'POST',
@@ -94,7 +92,7 @@ serve(async (req) => {
           body: JSON.stringify({
             taskId,
             title,
-            user_prompt: user_prompt || '',
+            user_prompt: finalUserPrompt,
             action: mode === 'suggest' ? 'suggest_enhancement' : 'enhance_task',
           }),
         });
@@ -106,24 +104,65 @@ serve(async (req) => {
 
         if (n8nResponse.ok) {
           try {
-            const n8nData = await n8nResponse.json();
-            console.log('[enhance-task] N8N success');
+            const contentType = n8nResponse.headers.get('content-type');
+            let n8nData;
             
-            // Extract from response
-            if (n8nData.enhanced_title) {
-              enhancedTitle = n8nData.enhanced_title;
-              usedN8N = true;
-            } else if (n8nData.title) {
-              enhancedTitle = n8nData.title;
-              usedN8N = true;
-            } else if (n8nData.output) {
-              enhancedTitle = n8nData.output;
-              usedN8N = true;
-            } else if (typeof n8nData === 'string') {
-              enhancedTitle = n8nData;
-              usedN8N = true;
+            // Check if response is JSON or plain text
+            if (contentType && contentType.includes('application/json')) {
+              n8nData = await n8nResponse.json();
+              console.log('[enhance-task] N8N JSON response:', JSON.stringify(n8nData));
+              
+              // Handle array responses (take first element)
+              if (Array.isArray(n8nData) && n8nData.length > 0) {
+                n8nData = n8nData[0];
+                console.log('[enhance-task] Extracted first element from array');
+              }
             } else {
-              console.warn('[enhance-task] No recognized field in N8N response');
+              // Plain text response
+              const textData = await n8nResponse.text();
+              console.log('[enhance-task] N8N text response:', textData);
+              n8nData = textData;
+            }
+            
+            // Extract from response - try multiple fields
+            let foundTitle = null;
+            
+            // If response is plain text/string, use it directly
+            if (typeof n8nData === 'string' && n8nData.trim()) {
+              foundTitle = n8nData.trim();
+            } 
+            // Try common field names for JSON responses
+            else if (typeof n8nData === 'object' && n8nData !== null) {
+              if (n8nData.improved_title && typeof n8nData.improved_title === 'string' && n8nData.improved_title.trim()) {
+                foundTitle = n8nData.improved_title.trim();
+                
+                // If there are steps, append them to the title
+                if (Array.isArray(n8nData.steps) && n8nData.steps.length > 0) {
+                  const stepsText = n8nData.steps
+                    .map((step: string, index: number) => `${index + 1}. ${step.trim()}`)
+                    .join('\n');
+                  foundTitle = `${foundTitle}\n\n${stepsText}`;
+                  console.log('[enhance-task] Added steps to enhanced title');
+                }
+              } else if (n8nData.enhanced_title && typeof n8nData.enhanced_title === 'string' && n8nData.enhanced_title.trim()) {
+                foundTitle = n8nData.enhanced_title.trim();
+              } else if (n8nData.title && typeof n8nData.title === 'string' && n8nData.title.trim()) {
+                foundTitle = n8nData.title.trim();
+              } else if (n8nData.output && typeof n8nData.output === 'string' && n8nData.output.trim()) {
+                foundTitle = n8nData.output.trim();
+              } else if (n8nData.body && typeof n8nData.body === 'string' && n8nData.body.trim()) {
+                foundTitle = n8nData.body.trim();
+              } else if (n8nData.text && typeof n8nData.text === 'string' && n8nData.text.trim()) {
+                foundTitle = n8nData.text.trim();
+              }
+            }
+            
+            if (foundTitle) {
+              enhancedTitle = foundTitle;
+              usedN8N = true;
+              console.log('[enhance-task] N8N success, extracted title:', enhancedTitle);
+            } else {
+              console.warn('[enhance-task] No valid title found in N8N response, response was:', n8nData);
               enhancedTitle = generateMockEnhancement(title, user_prompt);
             }
           } catch (e) {
