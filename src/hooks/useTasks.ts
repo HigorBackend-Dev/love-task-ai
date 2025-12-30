@@ -273,21 +273,28 @@ export function useTasks() {
     }
 
     try {
-      // Update database first
-      const { error } = await supabase
+      // Update database first and return the updated row
+      const { data: updatedTask, error } = await supabase
         .from('tasks')
         .update({ title: suggestedTitle, enhanced_title: suggestedTitle, status: 'enhanced' })
-        .eq('id', taskId);
+        .eq('id', taskId)
+        .select()
+        .single();
 
       if (error) throw error;
 
-      // Update local state immediately
-      const updatedTasks = tasks.map(t => 
-        t.id === taskId 
-          ? { ...t, title: suggestedTitle, enhanced_title: suggestedTitle, status: 'enhanced' as const } 
-          : t
-      );
-      setTasks(updatedTasks);
+      console.log('Updated task from DB:', updatedTask);
+
+      // Update local state immediately using functional update with the actual database result
+      setTasks(prevTasks => {
+        const newTasks = prevTasks.map(t => 
+          t.id === taskId 
+            ? { ...t, ...updatedTask } as Task
+            : t
+        );
+        console.log('Tasks after update:', newTasks);
+        return newTasks;
+      });
 
       toast({
         title: 'Task Updated',
@@ -315,25 +322,30 @@ export function useTasks() {
     }
 
     try {
-      const { error } = await supabase
+      // Update database - update both title and enhanced_title to keep them in sync
+      const { data: updatedTask, error } = await supabase
         .from('tasks')
-        .update({ title: title.trim(), enhanced_title: null, status: 'pending' })
-        .eq('id', taskId);
+        .update({ title: title.trim(), enhanced_title: title.trim() })
+        .eq('id', taskId)
+        .select()
+        .single();
 
       if (error) throw error;
 
-      // Update local state immediately before async enhancement
-      const updatedTasks = tasks.map(t =>
-        t.id === taskId ? { ...t, title: title.trim(), enhanced_title: null, status: 'pending' as const } : t
-      );
-      setTasks(updatedTasks);
+      console.log('Task updated in DB:', updatedTask);
 
-      // Re-enhance the task
-      enhanceTask(taskId, title.trim());
+      // Update local state with the actual database result
+      setTasks(prevTasks => {
+        const newTasks = prevTasks.map(t =>
+          t.id === taskId ? { ...t, ...updatedTask } as Task : t
+        );
+        console.log('Tasks after manual update:', newTasks);
+        return newTasks;
+      });
 
       toast({
         title: 'Task Updated',
-        description: 'AI is improving the new title...',
+        description: 'Your task has been updated successfully.',
       });
     } catch (error) {
       console.error('Error updating task:', error);

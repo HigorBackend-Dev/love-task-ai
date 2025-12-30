@@ -51,7 +51,7 @@ export function TaskList({ tasks, isLoading, onToggle, onUpdate, onDelete }: Tas
       {pendingTasks.length > 0 && (
         <div className="space-y-3">
           <h3 className="text-sm font-medium text-muted-foreground uppercase tracking-wider">
-            Pendentes ({pendingTasks.length})
+            Pending ({pendingTasks.length})
           </h3>
           {pendingTasks.map(task => (
             <TaskItem
@@ -68,7 +68,7 @@ export function TaskList({ tasks, isLoading, onToggle, onUpdate, onDelete }: Tas
       {completedTasks.length > 0 && (
         <div className="space-y-3">
           <h3 className="text-sm font-medium text-muted-foreground uppercase tracking-wider">
-            Concluídas ({completedTasks.length})
+            Completed ({completedTasks.length})
           </h3>
           {completedTasks.map(task => (
             <TaskItem

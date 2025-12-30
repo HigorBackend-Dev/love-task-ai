@@ -163,6 +163,7 @@ export const AuthProvider = ({ children }: AuthProviderProps) => {
     setError(null);
   };
 
+
   const value = {
     user,
     session,
@@ -172,7 +173,7 @@ export const AuthProvider = ({ children }: AuthProviderProps) => {
     signIn,
     signOut,
     updateProfile,
-    clearError,
+    clearError
   };
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

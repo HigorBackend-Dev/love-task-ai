@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Check, Pencil, Trash2, Loader2, Sparkles, X, Save, AlertCircle, ChevronDown, ChevronUp } from 'lucide-react';
 import { Task } from '@/types/task';
 import { useTasks } from '@/hooks/useTasks';
@@ -30,6 +30,23 @@ export function TaskItem({ task, onToggle, onUpdate, onDelete }: TaskItemProps) 
   const [suggestion, setSuggestion] = useState<string | null>(null);
   const [isApplying, setIsApplying] = useState(false);
   const { suggestEdit, applySuggestedTitle } = useTasks();
+
+  // Update editTitle when task prop changes
+  useEffect(() => {
+    setEditTitle(task.title);
+  }, [task.id, task.title]);
+
+  // Close AI mode when task title actually changes (successful apply)
+  useEffect(() => {
+    if (aiMode && suggestion && task.title === suggestion) {
+      // Task was successfully updated with the suggestion, close the AI mode
+      setAiMode(false);
+      setPromptText('');
+      setSuggestion(null);
+      setPromptError(null);
+      setIsApplying(false);
+    }
+  }, [task.title, aiMode, suggestion]);
 
   const displayTitle = task.status === 'enhanced' && task.enhanced_title ? task.enhanced_title : task.title;
   const isLongText = displayTitle.length > MAX_PREVIEW_LENGTH;
@@ -143,6 +160,7 @@ export function TaskItem({ task, onToggle, onUpdate, onDelete }: TaskItemProps) 
                             setIsApplying(true);
                             try {
                               await applySuggestedTitle(task.id, suggestion as string);
+                              // Close AI mode immediately on success
                               setAiMode(false);
                               setPromptText('');
                               setSuggestion(null);

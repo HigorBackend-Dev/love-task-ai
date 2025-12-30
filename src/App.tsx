@@ -6,6 +6,7 @@ import Auth from './pages/Auth';
 import Index from './pages/Index';
 import Dashboard from './pages/Dashboard';
 import Settings from './pages/Settings';
+
 import NotFound from './pages/NotFound';
 
 function App() {
